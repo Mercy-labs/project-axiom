@@ -1,2 +1,2 @@
 # project-axiom
-A long-term research project exploring AI systems for autonomous scientific discovery
+A long-term research project exploring AI systems for autonomous scientific discovery 
