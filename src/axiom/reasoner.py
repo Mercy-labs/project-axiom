@@ -2,86 +2,59 @@ from dataclasses import dataclass
 
 
 @dataclass
-class EvidenceAssessment:
-    statement: str
-    supports: bool
-    strength: float
-    reason: str
-
-
-@dataclass
 class ReasoningResult:
-    question: str
-    assessments: list[EvidenceAssessment]
+    claims: list[str]
     supported_claims: list[str]
     conflicting_claims: list[str]
     research_gaps: list[str]
-    conclusion: str
+    hypotheses: list[str]
     confidence: float
+    conclusion: str
 
 
 class AxiomReasoner:
     """
-    Axiom's first independent reasoning engine.
+    Deterministic evidence-based reasoning layer for Project Axiom.
 
-    It evaluates evidence against claims and produces:
-    - supporting evidence
-    - conflicting evidence
-    - research gaps
-    - a conclusion
-    - an uncertainty-aware confidence value
+    This is a research reasoning prototype. It does not determine
+    scientific truth. It compares claims against available evidence
+    using transparent heuristic rules.
     """
 
     def reason(
         self,
         question: str,
         evidence: list[str],
-        claims: list[str],
+        claims: list[str] | None = None,
     ) -> ReasoningResult:
 
-        if not question.strip():
-            raise ValueError("Research question cannot be empty.")
+        if claims is None:
+            claims = self._generate_claims(question)
 
-        if not claims:
-            raise ValueError("At least one claim is required.")
-
-        assessments = []
         supported_claims = []
         conflicting_claims = []
 
         for claim in claims:
-            support_score = self._calculate_support(claim, evidence)
-            conflict_score = self._calculate_conflict(claim, evidence)
-
-            if support_score >= conflict_score:
-                supports = True
-                strength = support_score
-                reason = "The available evidence provides more support than conflict."
-                supported_claims.append(claim)
-            else:
-                supports = False
-                strength = conflict_score
-                reason = "The available evidence provides more conflict than support."
-                conflicting_claims.append(claim)
-
-            assessments.append(
-                EvidenceAssessment(
-                    statement=claim,
-                    supports=supports,
-                    strength=round(strength, 3),
-                    reason=reason,
-                )
+            support_score = self._support_score(
+                claim=claim,
+                evidence=evidence,
             )
 
-        confidence = self._calculate_confidence(
-            evidence_count=len(evidence),
-            assessments=assessments,
-        )
+            conflict_score = self._conflict_score(
+                claim=claim,
+                evidence=evidence,
+            )
 
-        conclusion = self._build_conclusion(
+            if support_score > conflict_score and support_score >= 0.25:
+                supported_claims.append(claim)
+
+            elif conflict_score > support_score and conflict_score >= 0.25:
+                conflicting_claims.append(claim)
+
+        confidence = self._calculate_confidence(
+            evidence=evidence,
             supported_claims=supported_claims,
             conflicting_claims=conflicting_claims,
-            confidence=confidence,
         )
 
         research_gaps = self._find_gaps(
@@ -90,67 +63,99 @@ class AxiomReasoner:
             conflicting_claims=conflicting_claims,
         )
 
-        return ReasoningResult(
+        hypotheses = self._build_hypotheses(
             question=question,
-            assessments=assessments,
             supported_claims=supported_claims,
             conflicting_claims=conflicting_claims,
-            research_gaps=research_gaps,
-            conclusion=conclusion,
+        )
+
+        conclusion = self._build_conclusion(
+            supported_claims=supported_claims,
+            conflicting_claims=conflicting_claims,
             confidence=confidence,
         )
 
-    def _calculate_support(
+        return ReasoningResult(
+            claims=claims,
+            supported_claims=supported_claims,
+            conflicting_claims=conflicting_claims,
+            research_gaps=research_gaps,
+            hypotheses=hypotheses,
+            confidence=confidence,
+            conclusion=conclusion,
+        )
+
+    def _generate_claims(self, question: str) -> list[str]:
+        return [
+            (
+                f"The available scientific literature provides "
+                f"evidence relevant to: {question}"
+            ),
+            (
+                f"The available evidence suggests that "
+                f"{question} has measurable effects or relationships."
+            ),
+            (
+                f"The current evidence is sufficient to establish "
+                f"a strong causal conclusion about: {question}"
+            ),
+        ]
+
+    def _support_score(
         self,
         claim: str,
         evidence: list[str],
     ) -> float:
-        """
-        Estimate how strongly the evidence supports a claim.
 
-        This first version uses simple language overlap.
-        Later we can replace this with a learned reasoning model.
-        """
+        if not evidence:
+            return 0.0
 
         claim_words = self._important_words(claim)
 
         if not claim_words:
             return 0.0
 
-        best_score = 0.0
+        total_score = 0.0
 
-        for item in evidence:
-            evidence_words = self._important_words(item)
+        for statement in evidence:
+            evidence_words = self._important_words(statement)
+
             overlap = claim_words.intersection(evidence_words)
 
-            score = len(overlap) / len(claim_words)
+            if not overlap:
+                continue
 
-            if score > best_score:
-                best_score = score
+            similarity = len(overlap) / len(claim_words)
 
-        return min(best_score, 1.0)
+            total_score += similarity
 
-    def _calculate_conflict(
+        return min(total_score / max(len(evidence), 1), 1.0)
+
+    def _conflict_score(
         self,
         claim: str,
         evidence: list[str],
     ) -> float:
-        """
-        Look for language that explicitly contradicts a claim.
-        """
 
-        negative_terms = {
+        if not evidence:
+            return 0.0
+
+        conflict_terms = {
             "not",
             "no",
             "cannot",
-            "cannot",
             "fails",
             "failed",
+            "decrease",
+            "decreases",
+            "negative",
             "limited",
-            "unlikely",
+            "unclear",
+            "inconclusive",
+            "contradict",
             "contradicts",
-            "contrary",
-            "insufficient",
+            "conflict",
+            "conflicting",
         }
 
         claim_words = self._important_words(claim)
@@ -160,48 +165,116 @@ class AxiomReasoner:
 
         conflict_score = 0.0
 
-        for item in evidence:
-            words = self._important_words(item)
+        for statement in evidence:
+            evidence_words = self._important_words(statement)
 
-            overlap = claim_words.intersection(words)
+            overlap = claim_words.intersection(evidence_words)
 
-            negative_overlap = words.intersection(negative_terms)
+            if not overlap:
+                continue
 
-            if overlap and negative_overlap:
-                score = min(
-                    1.0,
-                    (len(overlap) / len(claim_words))
-                    * 0.75
-                    + 0.25,
+            conflict_words = evidence_words.intersection(
+                conflict_terms
+            )
+
+            if conflict_words:
+                conflict_score += (
+                    len(conflict_words) / max(len(evidence_words), 1)
                 )
-                conflict_score = max(conflict_score, score)
 
-        return conflict_score
+        return min(conflict_score / max(len(evidence), 1), 1.0)
 
     def _calculate_confidence(
         self,
-        evidence_count: int,
-        assessments: list[EvidenceAssessment],
+        evidence: list[str],
+        supported_claims: list[str],
+        conflicting_claims: list[str],
     ) -> float:
 
-        if not assessments:
+        if not evidence:
             return 0.0
 
-        evidence_factor = min(evidence_count / 10, 1.0)
+        evidence_factor = min(len(evidence) / 10.0, 1.0)
 
-        consistency = sum(
-            assessment.strength
-            for assessment in assessments
-        ) / len(assessments)
-
-        confidence = (
-            evidence_factor * 0.4
-            + consistency * 0.6
+        support_factor = min(
+            len(supported_claims) / max(len(supported_claims) + 1, 1),
+            1.0,
         )
 
-        return round(min(confidence, 1.0), 3)
+        conflict_penalty = min(
+            len(conflicting_claims) * 0.15,
+            0.6,
+        )
+
+        confidence = (
+            0.2
+            + (evidence_factor * 0.4)
+            + (support_factor * 0.4)
+            - conflict_penalty
+        )
+
+        return round(
+            max(0.0, min(confidence, 1.0)),
+            3,
+        )
+
+    def _build_hypotheses(
+        self,
+        question: str,
+        supported_claims: list[str],
+        conflicting_claims: list[str],
+    ) -> list[str]:
+
+        hypotheses = []
+
+        if supported_claims:
+            hypotheses.append(
+                (
+                    f"The available evidence supports further "
+                    f"investigation of: {question}"
+                )
+            )
+
+        if conflicting_claims:
+            hypotheses.append(
+                (
+                    f"The evidence may contain competing explanations "
+                    f"for: {question}"
+                )
+            )
+
+        hypotheses.append(
+            (
+                f"Additional evidence and experiments are needed "
+                f"to test the relationship described by: {question}"
+            )
+        )
+
+        return hypotheses
 
     def _build_conclusion(
         self,
         supported_claims: list[str],
-        conflicting_claims:
+        conflicting_claims: list[str],
+        confidence: float,
+    ) -> str:
+
+        if supported_claims and not conflicting_claims:
+            return (
+                "The available evidence supports the current "
+                "claims, with an estimated reasoning confidence "
+                f"of {confidence:.3f}."
+            )
+
+        if conflicting_claims and not supported_claims:
+            return (
+                "The available evidence conflicts with the "
+                "current claims, with an estimated reasoning "
+                f"confidence of {confidence:.3f}."
+            )
+
+        if supported_claims and conflicting_claims:
+            return (
+                "The evidence is mixed: some claims are "
+                "supported while others remain conflicting "
+                "or insufficiently
