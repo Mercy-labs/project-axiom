@@ -203,6 +203,7 @@ def run_axiom(question: str) -> ResearchReport:
             research_context.papers_found
         ),
         sources=source_lines,
+        reasoning=research_context.reasoning,
     )
 
 
