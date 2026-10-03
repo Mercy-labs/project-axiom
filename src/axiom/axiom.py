@@ -1,6 +1,6 @@
-from analysis import analyse_growth, find_best_experiment
-from hypotheses import generate_hypothesis
-from experiments import create_next_experiment
+from .analysis import analyse_growth, find_best_experiment
+from .hypotheses import generate_hypothesis
+from .experiments import create_next_experiment
 
 
 def main():
