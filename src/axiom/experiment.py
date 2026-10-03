@@ -3,15 +3,21 @@ from .research import Experiment
 
 class SimulationEngine:
     """
-    Executes computational experiments.
+    Computational scientific simulation engine.
 
-    This is deliberately simulation-based so Axiom can experiment
-    safely before interacting with real-world systems.
+    The current environment is intentionally simulated.
+    This gives Axiom a safe environment in which to
+    develop experimental reasoning.
     """
 
     def run(self, experiment: Experiment) -> dict:
-        input_value = experiment.parameters.get("input", 1)
 
+        input_value = experiment.parameters.get(
+            "input",
+            1,
+        )
+
+        # Simulated scientific relationship.
         output = (
             input_value * 10
             + input_value ** 2
@@ -23,22 +29,19 @@ class SimulationEngine:
         }
 
 
-def design_experiments(hypothesis):
-    experiments = []
+def design_experiment(
+    hypothesis,
+    input_value: int,
+) -> Experiment:
 
-    for value in range(1, 6):
-        experiments.append(
-            Experiment(
-                name=f"simulation_{value}",
-                hypothesis=hypothesis,
-                parameters={
-                    "input": value
-                },
-                purpose=(
-                    "Measure how changing the input affects "
-                    "the simulated outcome."
-                ),
-            )
-        )
-
-    return experiments
+    return Experiment(
+        name=f"experiment_input_{input_value}",
+        hypothesis=hypothesis,
+        parameters={
+            "input": input_value,
+        },
+        purpose=(
+            "Measure how changing the input variable "
+            "affects the simulated outcome."
+        ),
+    )
