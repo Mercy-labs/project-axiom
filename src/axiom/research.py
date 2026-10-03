@@ -32,6 +32,7 @@ class ScientificResearcher:
         self.reasoner = AxiomReasoner()
 
     def investigate(self, question: str) -> ResearchContext:
+
         search_results = self.literature.search_with_status(
             query=question,
             limit=5,
@@ -44,7 +45,9 @@ class ScientificResearcher:
             papers.extend(result.papers)
             source_status.append(result)
 
-        self.knowledge.add_papers(papers)
+        self.knowledge.add_papers(
+            papers
+        )
 
         context = self.knowledge.context()
 
@@ -57,18 +60,12 @@ class ScientificResearcher:
             papers
         )
 
-        claims = [
-            hypothesis.statement
-            for hypothesis in hypotheses
-        ]
-
         reasoning = self.reasoner.reason(
             question=question,
             evidence=[
                 item.statement
                 for item in evidence
             ],
-            claims=claims,
         )
 
         return ResearchContext(
