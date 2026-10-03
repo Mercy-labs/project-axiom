@@ -126,10 +126,12 @@ class AxiomReasoner:
                 continue
 
             similarity = len(overlap) / len(claim_words)
-
             total_score += similarity
 
-        return min(total_score / max(len(evidence), 1), 1.0)
+        return min(
+            total_score / max(len(evidence), 1),
+            1.0,
+        )
 
     def _conflict_score(
         self,
@@ -179,10 +181,14 @@ class AxiomReasoner:
 
             if conflict_words:
                 conflict_score += (
-                    len(conflict_words) / max(len(evidence_words), 1)
+                    len(conflict_words)
+                    / max(len(evidence_words), 1)
                 )
 
-        return min(conflict_score / max(len(evidence), 1), 1.0)
+        return min(
+            conflict_score / max(len(evidence), 1),
+            1.0,
+        )
 
     def _calculate_confidence(
         self,
@@ -194,10 +200,14 @@ class AxiomReasoner:
         if not evidence:
             return 0.0
 
-        evidence_factor = min(len(evidence) / 10.0, 1.0)
+        evidence_factor = min(
+            len(evidence) / 10.0,
+            1.0,
+        )
 
         support_factor = min(
-            len(supported_claims) / max(len(supported_claims) + 1, 1),
+            len(supported_claims)
+            / max(len(supported_claims) + 1, 1),
             1.0,
         )
 
@@ -238,8 +248,8 @@ class AxiomReasoner:
         if conflicting_claims:
             hypotheses.append(
                 (
-                    f"The evidence may contain competing explanations "
-                    f"for: {question}"
+                    f"The evidence may contain competing "
+                    f"explanations for: {question}"
                 )
             )
 
@@ -277,4 +287,77 @@ class AxiomReasoner:
             return (
                 "The evidence is mixed: some claims are "
                 "supported while others remain conflicting "
-                "or insufficiently
+                "or insufficiently supported."
+            )
+
+        return (
+            "The available evidence is insufficient "
+            "for a strong conclusion."
+        )
+
+    def _find_gaps(
+        self,
+        evidence: list[str],
+        supported_claims: list[str],
+        conflicting_claims: list[str],
+    ) -> list[str]:
+
+        gaps = []
+
+        if len(evidence) < 3:
+            gaps.append(
+                "More independent evidence is needed."
+            )
+
+        if conflicting_claims:
+            gaps.append(
+                "Conflicting evidence needs further investigation."
+            )
+
+        if not supported_claims:
+            gaps.append(
+                "No claim currently has sufficient support."
+            )
+
+        return gaps
+
+    @staticmethod
+    def _important_words(text: str) -> set[str]:
+
+        stop_words = {
+            "the",
+            "a",
+            "an",
+            "and",
+            "or",
+            "of",
+            "to",
+            "in",
+            "on",
+            "for",
+            "with",
+            "is",
+            "are",
+            "was",
+            "were",
+            "that",
+            "this",
+            "as",
+            "by",
+            "from",
+        }
+
+        words = {
+            word.strip(
+                ".,!?():;[]{}\"'"
+            ).lower()
+            for word in text.split()
+        }
+
+        return {
+            word
+            for word in words
+            if word
+            and word not in stop_words
+            and len(word) > 2
+        }
