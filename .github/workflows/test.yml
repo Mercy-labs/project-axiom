@@ -15,18 +15,16 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.x"
+          python-version: "3.12"
 
-      - name: Show project structure
+      - name: Check Axiom files
         run: |
-          echo "CURRENT DIRECTORY:"
           pwd
-          echo
-          echo "ROOT:"
-          find . -maxdepth 3 -type f | sort
-          echo
-          echo "PYTHON:"
-          python --version
+          echo "Project files:"
+          find . -maxdepth 4 -type f | sort
 
       - name: Run Axiom
-        run: python -m src.axiom.axiom
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m src.axiom.axiom
