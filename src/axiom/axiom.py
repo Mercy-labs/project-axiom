@@ -1,66 +1,22 @@
-import numpy as np
-
 from .config import Config
-from .experiment import Experiment, Observation, SimulationEngine
-from .hypothesis import HypothesisEngine
-from .knowledge import KnowledgeBase
 from .literature import SafeLiteratureSearcher
-from .memory import MemoryEntry, ResearchMemory
+from .knowledge import KnowledgeBase
+from .hypothesis import HypothesisEngine
+from .research import ScientificResearcher
+from .experiment import SimulationEngine
+from .evaluator import EvidenceEvaluator
+from .planner import ResearchPlanner
+from .memory import ResearchMemory, MemoryEntry
+from .verification import Verifier
+from .report import ResearchReport
+from .ml.dataset import build_dataset
 from .ml.predictor import MLPredictor
 from .ml.selector import ExperimentSelector
-from .planner import ResearchPlanner
-from .report import ResearchReport
-from .research import ScientificResearcher
-from .verification import Verifier
+from .model import ReasoningModel
 
 
-def determine_direction(observations: list[Observation]) -> str:
-    if len(observations) < 2:
-        return "neutral"
-
-    first = observations[0].output_value
-    last = observations[-1].output_value
-    delta = last - first
-
-    if abs(delta) < 0.5:
-        return "neutral"
-
-    if delta > 0:
-        return "increasing"
-
-    return "decreasing"
-
-
-def calculate_evidence_strength(
-    observations: list[Observation],
-) -> float:
-    if len(observations) < 2:
-        return 0.0
-
-    first = observations[0].output_value
-    last = observations[-1].output_value
-
-    delta = abs(last - first)
-
-    strength = min(
-        1.0,
-        0.5 + 0.1 * len(observations) + 0.05 * delta,
-    )
-
-    return strength
-
-
-def run_axiom() -> str:
-    config = Config()
-
-    question = (
-        "How does the experimental input affect the measured output "
-        "in our computational research environment?"
-    )
-
-    # ---------------------------------------------------------
-    # 1. Literature and knowledge
-    # ---------------------------------------------------------
+def run_axiom(question: str) -> ResearchReport:
+    config = Config.from_environment()
 
     knowledge = KnowledgeBase()
 
@@ -70,199 +26,151 @@ def run_axiom() -> str:
     )
 
     researcher = ScientificResearcher(
-        literature=literature,
-        knowledge=knowledge,
+        literature_searcher=literature,
+        knowledge_base=knowledge,
+        hypothesis_engine=HypothesisEngine(),
     )
 
-    researcher.investigate(question)
+    research_context = researcher.investigate(question)
 
-    # ---------------------------------------------------------
-    # 2. Generate competing hypotheses
-    # ---------------------------------------------------------
+    reasoning = ReasoningModel()
 
-    hypothesis_engine = HypothesisEngine()
-    hypotheses = hypothesis_engine.generate(question)
-
-    # ---------------------------------------------------------
-    # 3. Create the computational experiment environment
-    # ---------------------------------------------------------
+    hypothesis = reasoning.choose_hypothesis(
+        research_context.hypotheses
+    )
 
     simulator = SimulationEngine()
+    evaluator = EvidenceEvaluator()
+    verifier = Verifier()
 
     selector = ExperimentSelector(
-        minimum=config.min_candidate,
-        maximum=config.max_candidate,
+        minimum=config.candidate_min,
+        maximum=config.candidate_max,
     )
 
-    planner = ResearchPlanner(selector)
-    predictor = MLPredictor()
+    planner = ResearchPlanner(
+        selector=selector,
+    )
 
     memory = ResearchMemory()
-    observations: list[Observation] = []
 
-    # ---------------------------------------------------------
-    # 4. Run initial experiments
-    # ---------------------------------------------------------
+    observations = []
+    tested = set()
 
-    initial_values = [1, 3]
+    # Initial observations establish the first dataset.
+    initial_values = [1.0, 3.0]
 
     for value in initial_values:
-        experiment = Experiment(
-            input_value=float(value),
-            name=f"initial_experiment_{value}",
-        )
+        experiment = type(
+            "InitialExperiment",
+            (),
+            {
+                "input_value": value,
+                "name": f"initial_experiment_{int(value)}",
+            },
+        )()
 
         observation = simulator.run(experiment)
+
         observations.append(observation)
+        tested.add(value)
 
-    # ---------------------------------------------------------
-    # 5. Let the ML model choose subsequent experiments
-    # ---------------------------------------------------------
+    # Adaptive research loop.
+    for cycle in range(1, config.max_cycles + 1):
+        if len(observations) >= 2:
+            dataset = build_dataset(
+                inputs=[
+                    item.input_value
+                    for item in observations
+                ],
+                outputs=[
+                    item.output_value
+                    for item in observations
+                ],
+            )
 
-    for cycle in range(config.max_cycles):
-        features = np.array(
-            [
-                [observation.input_value]
-                for observation in observations
-            ],
-            dtype=float,
-        )
+            predictor = MLPredictor()
 
-        targets = np.array(
-            [
-                observation.output_value
-                for observation in observations
-            ],
-            dtype=float,
-        )
+            predictor.fit(
+                dataset.features(),
+                dataset.targets(),
+            )
 
-        predictor.fit(features, targets)
+            experiment = planner.choose(
+                predictor=predictor,
+                tested=tested,
+            )
 
-        tested = {
-            observation.input_value
-            for observation in observations
-        }
+        else:
+            experiment = type(
+                "FallbackExperiment",
+                (),
+                {
+                    "input_value": 1.0,
+                    "name": "fallback_experiment",
+                },
+            )()
 
-        experiment = planner.choose(
-            predictor=predictor,
-            tested=tested,
-        )
+        if experiment.input_value in tested:
+            break
 
         observation = simulator.run(experiment)
-        observations.append(observation)
 
-        # Store the current research state in memory.
+        observations.append(observation)
+        tested.add(experiment.input_value)
+
+        evaluation = evaluator.evaluate(
+            hypothesis=hypothesis,
+            observations=observations,
+        )
+
         memory.remember(
             MemoryEntry(
-                cycle=cycle + 1,
-                hypothesis=hypotheses[0].statement,
+                cycle=cycle,
+                hypothesis=hypothesis.statement,
                 experiment=experiment.name,
                 observation=observation.output_value,
-                conclusion="Experiment completed.",
-                confidence=hypotheses[0].confidence,
+                conclusion=evaluation.conclusion,
+                confidence=evaluation.strength,
             )
         )
 
-    # ---------------------------------------------------------
-    # 6. Analyse the accumulated evidence
-    # ---------------------------------------------------------
+        if len(observations) >= config.candidate_max:
+            break
 
-    observed_direction = determine_direction(observations)
-
-    evidence_strength = calculate_evidence_strength(
-        observations
+    final_evaluation = evaluator.evaluate(
+        hypothesis=hypothesis,
+        observations=observations,
     )
-
-    # ---------------------------------------------------------
-    # 7. Rank competing hypotheses
-    # ---------------------------------------------------------
-
-    ranked_hypotheses = hypothesis_engine.rank(
-        hypotheses,
-        observed_direction,
-    )
-
-    selected_hypothesis = ranked_hypotheses[0]
-
-    # ---------------------------------------------------------
-    # 8. Build the conclusion
-    # ---------------------------------------------------------
-
-    if observed_direction == "increasing":
-        conclusion = "The observations show an increasing trend."
-    elif observed_direction == "decreasing":
-        conclusion = "The observations show a decreasing trend."
-    else:
-        conclusion = (
-            "The observations do not show a strong consistent trend."
-        )
-
-    # ---------------------------------------------------------
-    # 9. Verify the evidence
-    # ---------------------------------------------------------
-
-    verifier = Verifier()
 
     verification = verifier.verify(
         observation_count=len(observations),
-        evidence_strength=evidence_strength,
+        evidence_strength=final_evaluation.strength,
     )
-
-    # ---------------------------------------------------------
-    # 10. Save research memory
-    # ---------------------------------------------------------
 
     memory.save()
 
-    # ---------------------------------------------------------
-    # 11. Build the final report
-    # ---------------------------------------------------------
-
-    report = ResearchReport(
+    return ResearchReport(
         question=question,
-        hypothesis=selected_hypothesis.statement,
+        hypothesis=hypothesis.statement,
         observations=[
             observation.output_value
             for observation in observations
         ],
-        conclusion=conclusion,
+        conclusion=final_evaluation.conclusion,
         verification=verification,
     )
 
-    rendered_report = report.render()
-
-    # ---------------------------------------------------------
-    # 12. Display hypothesis competition
-    # ---------------------------------------------------------
-
-    print("=== PROJECT AXIOM HYPOTHESIS COMPETITION ===")
-    print()
-    print(f"Candidate hypotheses: {len(ranked_hypotheses)}")
-    print()
-
-    for index, hypothesis in enumerate(
-        ranked_hypotheses,
-        start=1,
-    ):
-        print(
-            f"{index}. "
-            f"{hypothesis.direction.capitalize()} "
-            f"(confidence: {hypothesis.confidence:.2f})"
-        )
-        print(f"   {hypothesis.statement}")
-        print()
-
-    print("Selected hypothesis:")
-    print(selected_hypothesis.statement)
-    print()
-
-    print(rendered_report)
-
-    return rendered_report
-
 
 def main() -> None:
-    run_axiom()
+    question = (
+        "How does the experimental input affect the measured output "
+        "in our computational research environment?"
+    )
+
+    report = run_axiom(question)
+
+    print(report.render())
 
 
 if __name__ == "__main__":
