@@ -25,6 +25,30 @@ def get_memory():
     return load_memory()
 
 
+def get_latest_memory():
+    memory = load_memory()
+
+    if not memory:
+        return None
+
+    return memory[-1]
+
+
+def get_best_result():
+    memory = load_memory()
+
+    if not memory:
+        return None
+
+    best = memory[0]
+
+    for entry in memory:
+        if entry["result"] > best["result"]:
+            best = entry
+
+    return best
+
+
 def show_memory():
     memory = load_memory()
 
