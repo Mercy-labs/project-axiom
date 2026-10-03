@@ -35,6 +35,7 @@ def main():
     hypothesis = generate_hypothesis(best)
     next_experiment = create_next_experiment(best)
 
+    print("Experiment analysis:")
     print("Average growth:", analysis["average"])
     print("Highest growth:", analysis["highest"])
     print("Lowest growth:", analysis["lowest"])
