@@ -1,5 +1,5 @@
 from .config import Config
-from .evaluator import Evaluator
+from .evaluator import Evaluation
 from .experiment import Observation, SimulationEngine
 from .hypothesis import HypothesisEngine
 from .knowledge import KnowledgeBase
@@ -16,6 +16,7 @@ def run_axiom() -> str:
     config = Config()
 
     knowledge = KnowledgeBase()
+
     literature = SafeLiteratureSearcher(
         openalex_url=config.openalex_url,
         crossref_url=config.crossref_url,
@@ -31,16 +32,15 @@ def run_axiom() -> str:
         "in our computational research environment?"
     )
 
-    # 1. Research the question using available literature sources.
+    # Research the question using available literature sources.
     researcher.investigate(question)
 
-    # 2. Generate competing hypotheses.
+    # Generate competing hypotheses.
     hypothesis_engine = HypothesisEngine()
     hypotheses = hypothesis_engine.generate(question)
 
-    # 3. Create the experimental environment.
+    # Create the experimental environment.
     simulator = SimulationEngine()
-    evaluator = Evaluator()
     verifier = Verifier()
 
     selector = ExperimentSelector(
@@ -54,19 +54,17 @@ def run_axiom() -> str:
     observations: list[Observation] = []
 
     # Initial experiments provide the first evidence.
-    initial_inputs = [1, 3]
-
-    for value in initial_inputs:
+    for value in [1, 3]:
         result = simulator.run(value)
 
-        observation = Observation(
-            input_value=value,
-            output_value=result.output,
+        observations.append(
+            Observation(
+                input_value=value,
+                output_value=result.output,
+            )
         )
 
-        observations.append(observation)
-
-    # 4. Let the ML selector choose subsequent experiments.
+    # Let the ML selector choose subsequent experiments.
     for _ in range(config.max_cycles):
         inputs = [observation.input_value for observation in observations]
         outputs = [observation.output_value for observation in observations]
@@ -87,10 +85,10 @@ def run_axiom() -> str:
             output_value=observation.output_value,
         )
 
-    # 5. Evaluate the experimental evidence.
-    evaluation = evaluator.evaluate(observations)
+    # Evaluate the experimental evidence.
+    evaluation = Evaluation.from_observations(observations)
 
-    # 6. Score every competing hypothesis against the observed direction.
+    # Compare the competing hypotheses against the evidence.
     ranked_hypotheses = hypothesis_engine.rank(
         hypotheses,
         evaluation.direction,
@@ -98,4 +96,46 @@ def run_axiom() -> str:
 
     selected_hypothesis = ranked_hypotheses[0]
 
-    # 7. Verify the evidence
+    # Verify the evidence.
+    verification = verifier.verify(
+        observations=observations,
+        evidence_strength=evaluation.evidence_strength,
+    )
+
+    report = render_report(
+        question=question,
+        hypothesis=selected_hypothesis.statement,
+        observations=observations,
+        conclusion=evaluation.conclusion,
+        verification=verification,
+    )
+
+    print("=== PROJECT AXIOM HYPOTHESIS COMPETITION ===")
+    print()
+    print(f"Candidate hypotheses: {len(ranked_hypotheses)}")
+    print()
+
+    for index, hypothesis in enumerate(ranked_hypotheses, start=1):
+        print(
+            f"{index}. "
+            f"{hypothesis.direction.capitalize()} "
+            f"(confidence: {hypothesis.confidence:.2f})"
+        )
+        print(f"   {hypothesis.statement}")
+        print()
+
+    print("Selected hypothesis:")
+    print(selected_hypothesis.statement)
+    print()
+
+    print(report)
+
+    return report
+
+
+def main() -> None:
+    run_axiom()
+
+
+if __name__ == "__main__":
+    main()
