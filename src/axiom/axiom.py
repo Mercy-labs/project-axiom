@@ -2,10 +2,11 @@ from .analysis import analyse_growth, find_best_experiment
 from .hypotheses import generate_hypothesis
 from .experiments import create_next_experiment
 from .data import EXPERIMENTS
+from .memory import remember, show_memory
 
 
 def main():
-    print("Axiom v0.2 starting...")
+    print("Axiom v0.3 starting...")
 
     experiments = EXPERIMENTS
 
@@ -19,6 +20,14 @@ def main():
 
     hypothesis = generate_hypothesis(best)
     next_experiment = create_next_experiment(best)
+
+    research_entry = {
+        "experiment": best["name"],
+        "result": best["growth"],
+        "hypothesis": hypothesis
+    }
+
+    remember(research_entry)
 
     print("Experiment analysis:")
     print("Average growth:", analysis["average"])
@@ -36,6 +45,9 @@ def main():
     print("Next experiment:")
     print("Plant:", next_experiment["plant"])
     print("Sunlight:", next_experiment["sunlight"])
+
+    print()
+    show_memory()
 
 
 if __name__ == "__main__":
