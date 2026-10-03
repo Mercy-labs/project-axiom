@@ -27,9 +27,7 @@ def run_research(question_text):
     print("=" * 60)
     print()
 
-    question = ResearchQuestion(
-        question_text
-    )
+    question = ResearchQuestion(question_text)
 
     state = ResearchState(
         question=question
@@ -53,10 +51,7 @@ def run_research(question_text):
     )
 
     for hypothesis in hypotheses:
-
-        state.add_hypothesis(
-            hypothesis
-        )
+        state.add_hypothesis(hypothesis)
 
         print(
             f"- {hypothesis.statement}"
@@ -71,37 +66,26 @@ def run_research(question_text):
 
     completed_inputs = []
 
-    for cycle in range(
-        1,
-        MAX_CYCLES + 1,
-    ):
+    for cycle in range(1, MAX_CYCLES + 1):
 
         state.next_cycle()
 
         print("=" * 60)
-        print(
-            f"RESEARCH CYCLE {cycle}"
-        )
+        print(f"RESEARCH CYCLE {cycle}")
         print("=" * 60)
         print()
 
-        hypothesis = (
-            planner.choose_next_direction(
-                hypotheses
-            )
+        hypothesis = planner.choose_next_direction(
+            hypotheses
         )
 
         if hypothesis is None:
-            print(
-                "No research direction available."
-            )
+            print("No research direction available.")
             break
 
-        input_value = (
-            planner.choose_next_input(
-                hypothesis,
-                completed_inputs,
-            )
+        input_value = planner.choose_next_input(
+            hypothesis,
+            completed_inputs,
         )
 
         if input_value is None:
@@ -115,80 +99,44 @@ def run_research(question_text):
             input_value,
         )
 
-        state.add_experiment(
-            experiment
-        )
+        state.add_experiment(experiment)
 
         print("SELECTED HYPOTHESIS")
-        print(
-            hypothesis.statement
-        )
-
+        print(hypothesis.statement)
         print(
             f"Current confidence: "
             f"{hypothesis.confidence:.2f}"
         )
-
         print()
 
         print("EXPERIMENT")
-        print(
-            f"Name: {experiment.name}"
-        )
-
-        print(
-            f"Input: {input_value}"
-        )
-
-        print(
-            f"Purpose: "
-            f"{experiment.purpose}"
-        )
-
+        print(f"Name: {experiment.name}")
+        print(f"Input: {input_value}")
+        print(f"Purpose: {experiment.purpose}")
         print()
 
-        result = simulator.run(
-            experiment
-        )
+        result = simulator.run(experiment)
 
-        completed_inputs.append(
-            input_value
-        )
+        completed_inputs.append(input_value)
 
         print("OBSERVATION")
-        print(
-            f"Input: {result['input']}"
-        )
-
-        print(
-            f"Output: {result['output']}"
-        )
-
+        print(f"Input: {result['input']}")
+        print(f"Output: {result['output']}")
         print()
 
-        # Analyse the new observation together
-        # with previous observations.
         previous_results = []
 
         for old_experiment in state.experiments:
-
-            old_result = simulator.run(
-                old_experiment
-            )
-
-            previous_results.append(
-                old_result
-            )
+            old_result = simulator.run(old_experiment)
+            previous_results.append(old_result)
 
         analysis = evaluator.analyse(
             previous_results
         )
 
-        evaluation = (
-            evaluator.evaluate_hypothesis(
-                hypothesis,
-                analysis,
-            )
+        evaluation = evaluator.evaluate_hypothesis(
+            hypothesis,
+            analysis,
         )
 
         model.update_belief(
@@ -209,9 +157,7 @@ def run_research(question_text):
             strength=0.7,
         )
 
-        state.add_evidence(
-            evidence
-        )
+        state.add_evidence(evidence)
 
         memory.remember(
             {
@@ -223,9 +169,7 @@ def run_research(question_text):
                 "evaluation": evaluation,
                 "input": input_value,
                 "output": result["output"],
-                "relationship": analysis[
-                    "relationship"
-                ],
+                "relationship": analysis["relationship"],
             }
         )
 
@@ -308,10 +252,7 @@ def run_research(question_text):
     print("=" * 60)
 
     if best:
-        print(
-            best.statement
-        )
-
+        print(best.statement)
         print(
             f"Confidence: "
             f"{best.confidence:.2f}"
