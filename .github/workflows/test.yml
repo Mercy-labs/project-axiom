@@ -1,0 +1,40 @@
+name: Test Axiom
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Check project files
+        run: |
+          pwd
+          find . -maxdepth 5 -type f | sort
+
+      - name: Run tests
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m pytest tests -q
+
+      - name: Run Axiom
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m src.axiom.axiom
