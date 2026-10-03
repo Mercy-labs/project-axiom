@@ -16,6 +16,7 @@ from .model import ReasoningModel
 
 
 def run_axiom(question: str) -> ResearchReport:
+
     config = Config.from_environment()
 
     knowledge = KnowledgeBase()
@@ -31,7 +32,9 @@ def run_axiom(question: str) -> ResearchReport:
         hypothesis_engine=HypothesisEngine(),
     )
 
-    research_context = researcher.investigate(question)
+    research_context = researcher.investigate(
+        question
+    )
 
     reasoning = ReasoningModel()
 
@@ -57,27 +60,41 @@ def run_axiom(question: str) -> ResearchReport:
     observations = []
     tested = set()
 
-    # Initial observations establish the first dataset.
-    initial_values = [1.0, 3.0]
+    initial_values = [
+        1.0,
+        3.0,
+    ]
 
     for value in initial_values:
+
         experiment = type(
             "InitialExperiment",
             (),
             {
                 "input_value": value,
-                "name": f"initial_experiment_{int(value)}",
+                "name": (
+                    f"initial_experiment_{int(value)}"
+                ),
             },
         )()
 
-        observation = simulator.run(experiment)
+        observation = simulator.run(
+            experiment
+        )
 
-        observations.append(observation)
+        observations.append(
+            observation
+        )
+
         tested.add(value)
 
-    # Adaptive research loop.
-    for cycle in range(1, config.max_cycles + 1):
+    for cycle in range(
+        1,
+        config.max_cycles + 1,
+    ):
+
         if len(observations) >= 2:
+
             dataset = build_dataset(
                 inputs=[
                     item.input_value
@@ -102,6 +119,7 @@ def run_axiom(question: str) -> ResearchReport:
             )
 
         else:
+
             experiment = type(
                 "FallbackExperiment",
                 (),
@@ -114,10 +132,17 @@ def run_axiom(question: str) -> ResearchReport:
         if experiment.input_value in tested:
             break
 
-        observation = simulator.run(experiment)
+        observation = simulator.run(
+            experiment
+        )
 
-        observations.append(observation)
-        tested.add(experiment.input_value)
+        observations.append(
+            observation
+        )
+
+        tested.add(
+            experiment.input_value
+        )
 
         evaluation = evaluator.evaluate(
             hypothesis=hypothesis,
@@ -129,14 +154,13 @@ def run_axiom(question: str) -> ResearchReport:
                 cycle=cycle,
                 hypothesis=hypothesis.statement,
                 experiment=experiment.name,
-                observation=observation.output_value,
+                observation=(
+                    observation.output_value
+                ),
                 conclusion=evaluation.conclusion,
                 confidence=evaluation.strength,
             )
         )
-
-        if len(observations) >= config.candidate_max:
-            break
 
     final_evaluation = evaluator.evaluate(
         hypothesis=hypothesis,
@@ -145,10 +169,26 @@ def run_axiom(question: str) -> ResearchReport:
 
     verification = verifier.verify(
         observation_count=len(observations),
-        evidence_strength=final_evaluation.strength,
+        evidence_strength=(
+            final_evaluation.strength
+        ),
     )
 
     memory.save()
+
+    source_lines = []
+
+    for result in research_context.source_status:
+
+        if result.error:
+            source_lines.append(
+                f"{result.source}: unavailable"
+            )
+        else:
+            source_lines.append(
+                f"{result.source}: "
+                f"{len(result.papers)} results"
+            )
 
     return ResearchReport(
         question=question,
@@ -159,18 +199,26 @@ def run_axiom(question: str) -> ResearchReport:
         ],
         conclusion=final_evaluation.conclusion,
         verification=verification,
+        papers_found=(
+            research_context.papers_found
+        ),
+        sources=source_lines,
     )
 
 
 def main() -> None:
+
     question = (
-        "How does the experimental input affect the measured output "
-        "in our computational research environment?"
+        "How does the experimental input affect "
+        "the measured output in our computational "
+        "research environment?"
     )
 
     report = run_axiom(question)
 
-    print(report.render())
+    print(
+        report.render()
+    )
 
 
 if __name__ == "__main__":
