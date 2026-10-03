@@ -1,22 +1,40 @@
-research_memory = []
+import json
+from pathlib import Path
+
+
+MEMORY_FILE = Path(__file__).parent / "memory.json"
+
+
+def load_memory():
+    if not MEMORY_FILE.exists():
+        return []
+
+    with open(MEMORY_FILE, "r") as file:
+        return json.load(file)
 
 
 def remember(entry):
-    research_memory.append(entry)
+    memory = load_memory()
+    memory.append(entry)
+
+    with open(MEMORY_FILE, "w") as file:
+        json.dump(memory, file, indent=4)
 
 
 def get_memory():
-    return research_memory
+    return load_memory()
 
 
 def show_memory():
+    memory = load_memory()
+
     print("Axiom Research Memory")
 
-    if not research_memory:
+    if not memory:
         print("No research recorded yet.")
         return
 
-    for entry in research_memory:
+    for entry in memory:
         print()
         print("Experiment:", entry["experiment"])
         print("Result:", entry["result"])
