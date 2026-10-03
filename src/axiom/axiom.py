@@ -1,33 +1,18 @@
 from .analysis import analyse_growth, find_best_experiment
 from .hypotheses import generate_hypothesis
 from .experiments import create_next_experiment
+from .data import EXPERIMENTS
 
 
 def main():
     print("Axiom v0.2 starting...")
 
-    experiments = [
-        {
-            "name": "Experiment A",
-            "plant": "maize",
-            "sunlight": 6,
-            "growth": 25
-        },
-        {
-            "name": "Experiment B",
-            "plant": "maize",
-            "sunlight": 10,
-            "growth": 40
-        },
-        {
-            "name": "Experiment C",
-            "plant": "maize",
-            "sunlight": 8,
-            "growth": 32
-        }
-    ]
+    experiments = EXPERIMENTS
 
-    growth_results = [25, 40, 32]
+    growth_results = []
+
+    for experiment in experiments:
+        growth_results.append(experiment["growth"])
 
     analysis = analyse_growth(growth_results)
     best = find_best_experiment(experiments)
