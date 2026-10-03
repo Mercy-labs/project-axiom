@@ -1,6 +1,4 @@
-def experiment():
-    growth = [10, 25, 32, 18, 40]
-
+def analyse_experiment(growth):
     average = sum(growth) / len(growth)
     highest = max(growth)
     lowest = min(growth)
@@ -12,4 +10,4 @@ def experiment():
 
 
 if __name__ == "__main__":
-    experiment()
+    analyse_experiment([10, 25, 32, 18, 40])
