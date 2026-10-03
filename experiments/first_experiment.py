@@ -1,10 +1,14 @@
 def experiment():
-    numbers = [1, 2, 3, 4, 5]
+    growth = [10, 25, 32, 18, 40]
 
-    average = sum(numbers) / len(numbers)
+    average = sum(growth) / len(growth)
+    highest = max(growth)
+    lowest = min(growth)
 
-    print("Numbers:", numbers)
+    print("Growth results:", growth)
     print("Average:", average)
+    print("Highest:", highest)
+    print("Lowest:", lowest)
 
 
 if __name__ == "__main__":
