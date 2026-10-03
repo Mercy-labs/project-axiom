@@ -20,7 +20,7 @@ def main():
 
     previous_best = get_best_result()
 
-    hypothesis = generate_hypothesis(best)
+    hypothesis = generate_hypothesis(best, experiments)
     next_experiment = create_next_experiment(best)
 
     research_entry = {
