@@ -3,9 +3,10 @@ from .research import ResearchQuestion, Hypothesis
 
 class ReasoningModel:
     """
-    Interface for Axiom's reasoning system.
+    Reasoning interface for Axiom.
 
-    A real language model can be connected here later.
+    This version uses deterministic scientific reasoning.
+    A more advanced reasoning model can be connected later.
     """
 
     def generate_hypotheses(
@@ -16,37 +17,61 @@ class ReasoningModel:
         return [
             Hypothesis(
                 statement=(
-                    "The proposed variable has a positive effect "
-                    "on the measured outcome."
+                    "The proposed variable has a positive "
+                    "effect on the measured outcome."
                 ),
                 confidence=0.34,
             ),
             Hypothesis(
                 statement=(
-                    "The proposed variable has a negative effect "
-                    "on the measured outcome."
+                    "The proposed variable has a negative "
+                    "effect on the measured outcome."
                 ),
                 confidence=0.33,
             ),
             Hypothesis(
                 statement=(
-                    "The proposed variable has little or no effect "
-                    "on the measured outcome."
+                    "The proposed variable has little or no "
+                    "effect on the measured outcome."
                 ),
                 confidence=0.33,
             ),
         ]
 
-    def explain_result(self, question, hypothesis, evidence):
+    def update_belief(
+        self,
+        hypothesis: Hypothesis,
+        evaluation: str,
+    ):
+        """
+        Update the model's belief using experimental evidence.
+        """
+
+        hypothesis.update_from_evidence(
+            evaluation
+        )
+
+    def explain_result(
+        self,
+        hypothesis: Hypothesis,
+        analysis: dict,
+    ) -> str:
+
         return (
-            f"Evidence was collected to test: "
-            f"{hypothesis.statement}"
+            f"The experiment produced a "
+            f"{analysis['relationship']} relationship. "
+            f"This evidence makes the hypothesis "
+            f"{analysis['relationship']} relative to "
+            f"the observed data."
         )
 
 
 class LocalReasoningModel(ReasoningModel):
     """
-    Safe local reasoning engine used until a real model is connected.
+    Local reasoning engine.
+
+    This provides Axiom with a safe deterministic
+    reasoning layer before a larger model is connected.
     """
 
     pass
