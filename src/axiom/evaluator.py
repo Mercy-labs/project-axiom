@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+
 from .experiment import Observation
 from .hypothesis import Hypothesis
 
@@ -12,6 +13,7 @@ class Evaluation:
 
 
 class EvidenceEvaluator:
+
     def evaluate(
         self,
         hypothesis: Hypothesis,
@@ -22,7 +24,9 @@ class EvidenceEvaluator:
             return Evaluation(
                 hypothesis=hypothesis.statement,
                 observations=observations,
-                conclusion="Insufficient observations.",
+                conclusion=(
+                    "Insufficient observations."
+                ),
                 strength=0.0,
             )
 
@@ -32,26 +36,43 @@ class EvidenceEvaluator:
         delta = last - first
 
         if abs(delta) < 0.5:
-            conclusion = "The observed change is small."
+
+            conclusion = (
+                "The observed change is small."
+            )
+
             agreement = 0.5
 
         elif delta > 0:
-            conclusion = "The observations show an increasing trend."
+
+            conclusion = (
+                "The observations show an "
+                "increasing trend."
+            )
+
             agreement = (
-                0.8 if hypothesis.predicted_direction == "positive"
+                0.8
+                if hypothesis.direction == "increasing"
                 else 0.2
             )
 
         else:
-            conclusion = "The observations show a decreasing trend."
+
+            conclusion = (
+                "The observations show a "
+                "decreasing trend."
+            )
+
             agreement = (
-                0.8 if hypothesis.predicted_direction == "negative"
+                0.8
+                if hypothesis.direction == "decreasing"
                 else 0.2
             )
 
         strength = min(
             1.0,
-            agreement * (0.5 + 0.1 * len(observations)),
+            agreement
+            * (0.5 + 0.1 * len(observations)),
         )
 
         return Evaluation(
