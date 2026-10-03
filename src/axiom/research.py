@@ -1,8 +1,14 @@
 from dataclasses import dataclass
 
 from .knowledge import KnowledgeBase
-from .literature import SafeLiteratureSearcher
-from .hypothesis import HypothesisEngine, Hypothesis
+from .literature import (
+    LiteratureSearchResult,
+    SafeLiteratureSearcher,
+)
+from .hypothesis import (
+    Hypothesis,
+    HypothesisEngine,
+)
 
 
 @dataclass
@@ -11,9 +17,11 @@ class ResearchContext:
     papers_found: int
     knowledge_summary: str
     hypotheses: list[Hypothesis]
+    source_status: list[LiteratureSearchResult]
 
 
 class ScientificResearcher:
+
     def __init__(
         self,
         literature_searcher: SafeLiteratureSearcher,
@@ -29,12 +37,21 @@ class ScientificResearcher:
         question: str,
     ) -> ResearchContext:
 
-        papers = self.literature.search(
-            query=question,
-            limit=5,
+        source_status = (
+            self.literature.search_with_status(
+                query=question,
+                limit=5,
+            )
         )
 
-        self.knowledge.add_papers(papers)
+        papers = []
+
+        for result in source_status:
+            papers.extend(result.papers)
+
+        self.knowledge.add_papers(
+            papers
+        )
 
         context = self.knowledge.context()
 
@@ -45,7 +62,10 @@ class ScientificResearcher:
 
         return ResearchContext(
             question=question,
-            papers_found=len(papers),
+            papers_found=len(
+                self.knowledge.papers
+            ),
             knowledge_summary=context,
             hypotheses=hypotheses,
+            source_status=source_status,
         )
