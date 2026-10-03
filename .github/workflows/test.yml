@@ -17,14 +17,16 @@ jobs:
         with:
           python-version: "3.x"
 
-      - name: Check Axiom files
+      - name: Show project structure
         run: |
+          echo "CURRENT DIRECTORY:"
           pwd
-          ls -la
-          echo "----- src -----"
-          ls -la src
-          echo "----- src/axiom -----"
-          ls -la src/axiom
+          echo
+          echo "ROOT:"
+          find . -maxdepth 3 -type f | sort
+          echo
+          echo "PYTHON:"
+          python --version
 
       - name: Run Axiom
         run: python -m src.axiom.axiom
