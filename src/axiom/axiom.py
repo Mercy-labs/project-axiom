@@ -1,177 +1,101 @@
 from .config import Config
-from .literature import SafeLiteratureSearcher
-from .knowledge import KnowledgeBase
+from .evaluator import Evaluator
+from .experiment import Observation, SimulationEngine
 from .hypothesis import HypothesisEngine
+from .knowledge import KnowledgeBase
+from .literature import SafeLiteratureSearcher
+from .memory import ResearchMemory
+from .planner import ExperimentPlanner
+from .report import render_report
 from .research import ScientificResearcher
-from .experiment import SimulationEngine
-from .evaluator import EvidenceEvaluator
-from .planner import ResearchPlanner
-from .memory import ResearchMemory, MemoryEntry
 from .verification import Verifier
-from .report import ResearchReport
-from .ml.dataset import build_dataset
-from .ml.predictor import MLPredictor
 from .ml.selector import ExperimentSelector
-from .model import ReasoningModel
 
 
-def run_axiom(question: str) -> ResearchReport:
-    config = Config.from_environment()
+def run_axiom() -> str:
+    config = Config()
 
     knowledge = KnowledgeBase()
-
     literature = SafeLiteratureSearcher(
         openalex_url=config.openalex_url,
         crossref_url=config.crossref_url,
     )
 
     researcher = ScientificResearcher(
-        literature_searcher=literature,
-        knowledge_base=knowledge,
-        hypothesis_engine=HypothesisEngine(),
+        literature=literature,
+        knowledge=knowledge,
     )
 
-    research_context = researcher.investigate(question)
-
-    reasoning = ReasoningModel()
-
-    hypothesis = reasoning.choose_hypothesis(
-        research_context.hypotheses
-    )
-
-    simulator = SimulationEngine()
-    evaluator = EvidenceEvaluator()
-    verifier = Verifier()
-
-    selector = ExperimentSelector(
-        minimum=config.candidate_min,
-        maximum=config.candidate_max,
-    )
-
-    planner = ResearchPlanner(
-        selector=selector,
-    )
-
-    memory = ResearchMemory()
-
-    observations = []
-    tested = set()
-
-    # Initial observations establish the first dataset.
-    initial_values = [1.0, 3.0]
-
-    for value in initial_values:
-        experiment = type(
-            "InitialExperiment",
-            (),
-            {
-                "input_value": value,
-                "name": f"initial_experiment_{int(value)}",
-            },
-        )()
-
-        observation = simulator.run(experiment)
-
-        observations.append(observation)
-        tested.add(value)
-
-    # Adaptive research loop.
-    for cycle in range(1, config.max_cycles + 1):
-        if len(observations) >= 2:
-            dataset = build_dataset(
-                inputs=[
-                    item.input_value
-                    for item in observations
-                ],
-                outputs=[
-                    item.output_value
-                    for item in observations
-                ],
-            )
-
-            predictor = MLPredictor()
-
-            predictor.fit(
-                dataset.features(),
-                dataset.targets(),
-            )
-
-            experiment = planner.choose(
-                predictor=predictor,
-                tested=tested,
-            )
-
-        else:
-            experiment = type(
-                "FallbackExperiment",
-                (),
-                {
-                    "input_value": 1.0,
-                    "name": "fallback_experiment",
-                },
-            )()
-
-        if experiment.input_value in tested:
-            break
-
-        observation = simulator.run(experiment)
-
-        observations.append(observation)
-        tested.add(experiment.input_value)
-
-        evaluation = evaluator.evaluate(
-            hypothesis=hypothesis,
-            observations=observations,
-        )
-
-        memory.remember(
-            MemoryEntry(
-                cycle=cycle,
-                hypothesis=hypothesis.statement,
-                experiment=experiment.name,
-                observation=observation.output_value,
-                conclusion=evaluation.conclusion,
-                confidence=evaluation.strength,
-            )
-        )
-
-        if len(observations) >= config.candidate_max:
-            break
-
-    final_evaluation = evaluator.evaluate(
-        hypothesis=hypothesis,
-        observations=observations,
-    )
-
-    verification = verifier.verify(
-        observation_count=len(observations),
-        evidence_strength=final_evaluation.strength,
-    )
-
-    memory.save()
-
-    return ResearchReport(
-        question=question,
-        hypothesis=hypothesis.statement,
-        observations=[
-            observation.output_value
-            for observation in observations
-        ],
-        conclusion=final_evaluation.conclusion,
-        verification=verification,
-    )
-
-
-def main() -> None:
     question = (
         "How does the experimental input affect the measured output "
         "in our computational research environment?"
     )
 
-    report = run_axiom(question)
+    # 1. Research the question using available literature sources.
+    researcher.investigate(question)
 
-    print(report.render())
+    # 2. Generate competing hypotheses.
+    hypothesis_engine = HypothesisEngine()
+    hypotheses = hypothesis_engine.generate(question)
 
+    # 3. Create the experimental environment.
+    simulator = SimulationEngine()
+    evaluator = Evaluator()
+    verifier = Verifier()
 
-if __name__ == "__main__":
-    main()
+    selector = ExperimentSelector(
+        min_value=config.min_candidate,
+        max_value=config.max_candidate,
+    )
+
+    planner = ExperimentPlanner(selector)
+    memory = ResearchMemory()
+
+    observations: list[Observation] = []
+
+    # Initial experiments provide the first evidence.
+    initial_inputs = [1, 3]
+
+    for value in initial_inputs:
+        result = simulator.run(value)
+
+        observation = Observation(
+            input_value=value,
+            output_value=result.output,
+        )
+
+        observations.append(observation)
+
+    # 4. Let the ML selector choose subsequent experiments.
+    for _ in range(config.max_cycles):
+        inputs = [observation.input_value for observation in observations]
+        outputs = [observation.output_value for observation in observations]
+
+        experiment = planner.next_experiment(inputs, outputs)
+
+        result = simulator.run(experiment.input_value)
+
+        observation = Observation(
+            input_value=experiment.input_value,
+            output_value=result.output,
+        )
+
+        observations.append(observation)
+
+        memory.record(
+            input_value=observation.input_value,
+            output_value=observation.output_value,
+        )
+
+    # 5. Evaluate the experimental evidence.
+    evaluation = evaluator.evaluate(observations)
+
+    # 6. Score every competing hypothesis against the observed direction.
+    ranked_hypotheses = hypothesis_engine.rank(
+        hypotheses,
+        evaluation.direction,
+    )
+
+    selected_hypothesis = ranked_hypotheses[0]
+
+    # 7. Verify the evidence
