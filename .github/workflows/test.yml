@@ -17,5 +17,14 @@ jobs:
         with:
           python-version: "3.x"
 
+      - name: Check Axiom files
+        run: |
+          pwd
+          ls -la
+          echo "----- src -----"
+          ls -la src
+          echo "----- src/axiom -----"
+          ls -la src/axiom
+
       - name: Run Axiom
         run: python -m src.axiom.axiom
