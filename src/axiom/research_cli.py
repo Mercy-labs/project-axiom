@@ -1,4 +1,5 @@
 import sys
+import time
 
 from .axiom import run_research
 
@@ -30,40 +31,40 @@ def main() -> None:
     )
     print()
 
+    start = time.perf_counter()
+
     print(
-        "Running literature research..."
+        "Searching scientific literature..."
     )
 
     report = run_research(
         question
     )
 
-    print(
-        f"Research result type: {type(report).__name__}"
+    elapsed = (
+        time.perf_counter()
+        - start
     )
 
     if report is None:
         print(
-            "ERROR: run_research() returned None."
+            "ERROR: research returned no report."
         )
         raise SystemExit(1)
-
-    print(
-        "Rendering research report..."
-    )
 
     rendered = report.render()
 
-    print(
-        f"Rendered result type: {type(rendered).__name__}"
-    )
-
-    if rendered is None:
+    if not rendered:
         print(
-            "ERROR: report.render() returned None."
+            "ERROR: report rendering returned "
+            "an empty result."
         )
         raise SystemExit(1)
 
+    print(
+        f"Research completed in "
+        f"{elapsed:.2f} seconds."
+    )
     print()
     print(
         rendered
