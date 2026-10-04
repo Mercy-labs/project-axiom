@@ -1,592 +1,736 @@
 from dataclasses import dataclass
+import re
 
 
 @dataclass
 class ReasoningResult:
+    question: str
+    question_type: str
     claims: list[str]
-    supported_claims: list[str]
     uncertain_claims: list[str]
     conflicting_claims: list[str]
     research_gaps: list[str]
-    hypotheses: list[str]
-    confidence: float
     conclusion: str
-    question_type: str = "unknown"
+    confidence: float
     answer: str = ""
     evidence_used: list[str] | None = None
 
 
 class AxiomReasoner:
     """
-    Transparent evidence-synthesis layer for Project Axiom.
+    Evidence-grounded scientific reasoning layer.
 
-    Axiom does not pretend that a heuristic score is scientific truth.
-    The answer is constructed from retrieved evidence and clearly
-    labelled as evidence-backed synthesis.
+    This component does not try to "prove" a scientific claim.
+    It analyses the retrieved evidence and produces a cautious
+    synthesis based only on what the evidence supports.
+
+    Confidence here represents the strength and consistency of the
+    retrieved evidence, not the probability that a scientific claim
+    is true.
     """
+
+    LIMITATION_TERMS = {
+        "limitation",
+        "limitations",
+        "challenge",
+        "challenges",
+        "remain",
+        "remains",
+        "however",
+        "but",
+        "uncertain",
+        "uncertainty",
+        "difficult",
+        "difficulty",
+        "cannot",
+        "unable",
+        "lack",
+        "lacks",
+        "limited",
+        "human oversight",
+        "human validation",
+        "validation required",
+        "requires validation",
+        "requires human",
+        "experimental validation",
+        "further research",
+        "future work",
+        "open question",
+        "open questions",
+        "not yet",
+        "still",
+    }
+
+    DISCOVERY_TERMS = {
+        "scientific discovery",
+        "scientific research",
+        "research",
+        "hypothesis",
+        "hypotheses",
+        "hypothesis generation",
+        "experiment",
+        "experiments",
+        "experimental design",
+        "data analysis",
+        "literature",
+        "scientific knowledge",
+        "automated science",
+        "autonomous research",
+        "ai scientist",
+        "scientific reasoning",
+    }
+
+    BENEFIT_TERMS = {
+        "accelerat",
+        "improv",
+        "enhanc",
+        "assist",
+        "autom",
+        "efficien",
+        "speed",
+        "faster",
+        "scale",
+        "scaling",
+        "discover",
+        "generate",
+        "predict",
+        "identify",
+        "analysis",
+        "design",
+    }
+
+    CONFLICT_TERMS = {
+        "however",
+        "but",
+        "contradict",
+        "conflict",
+        "mixed",
+        "inconsistent",
+        "disagree",
+        "disagreement",
+        "whereas",
+        "on the other hand",
+    }
 
     def reason(
         self,
         question: str,
         evidence: list[str],
-        claims: list[str] | None = None,
     ) -> ReasoningResult:
 
-        question_type = (
-            self._classify_question(
-                question
+        cleaned_question = (
+            " ".join(
+                question.split()
+            ).strip()
+        )
+
+        cleaned_evidence = self._clean_evidence(
+            evidence
+        )
+
+        question_type = self._classify_question(
+            cleaned_question
+        )
+
+        if not cleaned_evidence:
+            return ReasoningResult(
+                question=cleaned_question,
+                question_type=question_type,
+                claims=[],
+                uncertain_claims=[],
+                conflicting_claims=[],
+                research_gaps=[
+                    "No usable evidence was retrieved."
+                ],
+                conclusion=(
+                    "Axiom could not produce a "
+                    "reliable evidence-grounded "
+                    "synthesis because no usable "
+                    "evidence was available."
+                ),
+                confidence=0.0,
+                answer=(
+                    "Insufficient evidence was "
+                    "retrieved to answer this "
+                    "question reliably."
+                ),
+                evidence_used=[],
+            )
+
+        claims = self._extract_claims(
+            cleaned_evidence
+        )
+
+        uncertain_claims = (
+            self._extract_uncertain_claims(
+                cleaned_evidence
             )
         )
 
-        if claims is None:
-            claims = self._generate_claims(
-                question,
-                question_type,
-            )
-
-        supported_claims = []
-        uncertain_claims = []
-        conflicting_claims = []
-
-        for claim in claims:
-            score = self._support_score(
-                claim,
-                evidence,
-            )
-
-            conflict = self._conflict_score(
-                claim,
-                evidence,
-            )
-
-            if (
-                conflict > score
-                and conflict >= 0.15
-            ):
-                conflicting_claims.append(
-                    claim
-                )
-            elif score >= 0.15:
-                supported_claims.append(
-                    claim
-                )
-            else:
-                uncertain_claims.append(
-                    claim
-                )
-
-        answer = self._build_answer(
-            question=question,
-            evidence=evidence,
-        )
-
-        confidence = (
-            self._calculate_confidence(
-                evidence=evidence,
-                supported_claims=supported_claims,
-                uncertain_claims=uncertain_claims,
-                conflicting_claims=conflicting_claims,
+        conflicting_claims = (
+            self._extract_conflicts(
+                cleaned_evidence
             )
         )
 
-        gaps = self._find_gaps(
-            evidence=evidence,
-            supported_claims=supported_claims,
+        research_gaps = (
+            self._identify_research_gaps(
+                cleaned_evidence,
+                claims,
+                uncertain_claims,
+            )
+        )
+
+        confidence = self._calculate_confidence(
+            evidence=cleaned_evidence,
+            claims=claims,
+            uncertain_claims=uncertain_claims,
             conflicting_claims=conflicting_claims,
-        )
-
-        hypotheses = self._build_hypotheses(
-            question,
-            uncertain_claims,
-            conflicting_claims,
         )
 
         conclusion = self._build_conclusion(
-            answer=answer,
-            confidence=confidence,
-            evidence_count=len(evidence),
+            question=cleaned_question,
+            claims=claims,
+            uncertain_claims=uncertain_claims,
+            conflicting_claims=conflicting_claims,
+            research_gaps=research_gaps,
+        )
+
+        answer = self._build_answer(
+            question=cleaned_question,
+            claims=claims,
+            uncertain_claims=uncertain_claims,
+            research_gaps=research_gaps,
         )
 
         return ReasoningResult(
+            question=cleaned_question,
+            question_type=question_type,
             claims=claims,
-            supported_claims=supported_claims,
             uncertain_claims=uncertain_claims,
             conflicting_claims=conflicting_claims,
-            research_gaps=gaps,
-            hypotheses=hypotheses,
-            confidence=confidence,
+            research_gaps=research_gaps,
             conclusion=conclusion,
-            question_type=question_type,
+            confidence=confidence,
             answer=answer,
-            evidence_used=evidence[:8],
+            evidence_used=cleaned_evidence,
         )
 
-    def _build_answer(
-        self,
-        question: str,
+    @staticmethod
+    def _clean_evidence(
         evidence: list[str],
-    ) -> str:
+    ) -> list[str]:
 
-        if not evidence:
-            return (
-                "Axiom could not retrieve enough usable "
-                "evidence to produce an evidence-backed "
-                "answer."
-            )
-
-        selected = []
-
+        cleaned = []
         seen = set()
 
-        for statement in evidence:
-            cleaned = " ".join(
-                statement.split()
-            )
+        for item in evidence:
 
-            key = cleaned.lower()
+            if not item:
+                continue
+
+            text = " ".join(
+                str(item).split()
+            ).strip()
+
+            if not text:
+                continue
+
+            key = text.lower()
 
             if key in seen:
                 continue
 
             seen.add(key)
-            selected.append(cleaned)
+            cleaned.append(text)
 
-            if len(selected) >= 6:
-                break
+        return cleaned
 
-        if not selected:
-            return (
-                "Axiom retrieved literature, but the "
-                "available material did not contain enough "
-                "usable evidence statements."
-            )
-
-        lines = [
-            (
-                "Based on the retrieved scientific literature, "
-                f"the evidence suggests that {question.lower()} "
-                "is influenced by multiple interacting factors."
-            ),
-            "",
-            "Key evidence:",
-        ]
-
-        for statement in selected:
-            lines.append(
-                f"- {statement}"
-            )
-
-        lines.extend(
-            [
-                "",
-                (
-                    "This is an evidence-backed synthesis of "
-                    "the retrieved literature, not a claim of "
-                    "scientific certainty."
-                ),
-            ]
-        )
-
-        return "\n".join(
-            lines
-        )
-
+    @staticmethod
     def _classify_question(
-        self,
         question: str,
     ) -> str:
 
-        text = question.lower()
+        text = question.lower().strip()
 
-        if any(
-            phrase in text
-            for phrase in (
-                "why",
-                "how does",
-                "how do",
-                "mechanism",
-                "mechanisms",
-                "what causes",
-            )
+        if text.startswith(
+            ("how does", "how do", "how can")
         ):
             return "explanatory"
 
-        if any(
-            word in text
-            for word in (
-                "effect",
-                "affect",
-                "impact",
-                "increase",
-                "decrease",
-                "compare",
-                "versus",
-                "better",
-                "worse",
-            )
+        if text.startswith(
+            ("why does", "why do", "why is", "why are")
         ):
-            return "causal_or_comparative"
+            return "causal"
 
-        if any(
-            word in text
-            for word in (
-                "what",
-                "which",
-                "who",
-                "where",
-                "when",
-                "applications",
-                "examples",
-            )
+        if text.startswith(
+            ("what is", "what are", "define")
         ):
             return "descriptive"
 
-        return "unknown"
+        if text.startswith(
+            ("can ", "could ", "is it possible")
+        ):
+            return "possibility"
 
-    def _generate_claims(
-        self,
-        question: str,
-        question_type: str,
+        if text.startswith(
+            ("which ", "what ")
+        ):
+            return "comparative"
+
+        return "general"
+
+
+    @classmethod
+    def _split_sentences(
+        cls,
+        text: str,
     ) -> list[str]:
 
-        if question_type == "explanatory":
-            return [
-                (
-                    "The literature contains evidence "
-                    "relevant to explaining the question."
-                ),
-                (
-                    "The literature identifies mechanisms, "
-                    "factors, or relationships relevant "
-                    "to the question."
-                ),
-            ]
-
-        if question_type == "causal_or_comparative":
-            return [
-                (
-                    "The literature contains evidence "
-                    "relevant to evaluating the stated "
-                    "effect or relationship."
-                ),
-                (
-                    "The literature reports measurable "
-                    "effects, differences, or associations "
-                    "relevant to the question."
-                ),
-            ]
-
-        if question_type == "descriptive":
-            return [
-                (
-                    "The literature contains documented "
-                    "findings relevant to the question."
-                ),
-                (
-                    "The literature provides examples, "
-                    "methods, or applications relevant "
-                    "to the question."
-                ),
-            ]
+        sentences = re.split(
+            r"(?<=[.!?])\s+",
+            text,
+        )
 
         return [
-            (
-                "The retrieved literature contains evidence "
-                "relevant to the question."
-            )
+            sentence.strip()
+            for sentence in sentences
+            if sentence.strip()
         ]
 
-    def _support_score(
-        self,
-        claim: str,
+    @classmethod
+    def _contains_term(
+        cls,
+        text: str,
+        terms: set[str],
+    ) -> bool:
+
+        lowered = text.lower()
+
+        return any(
+            term in lowered
+            for term in terms
+        )
+
+    @classmethod
+    def _extract_claims(
+        cls,
         evidence: list[str],
-    ) -> float:
+    ) -> list[str]:
 
-        claim_words = self._important_words(
-            claim
-        )
+        candidates = []
 
-        if not claim_words:
-            return 0.0
+        for item in evidence:
 
-        scores = []
-
-        for statement in evidence:
-            statement_words = (
-                self._important_words(
-                    statement
-                )
-            )
-
-            overlap = (
-                claim_words
-                .intersection(
-                    statement_words
-                )
-            )
-
-            if overlap:
-                scores.append(
-                    len(overlap)
-                    / len(claim_words)
-                )
-
-        if not scores:
-            return 0.0
-
-        return min(
-            max(scores),
-            1.0,
-        )
-
-    def _conflict_score(
-        self,
-        claim: str,
-        evidence: list[str],
-    ) -> float:
-
-        claim_words = self._important_words(
-            claim
-        )
-
-        conflict_terms = {
-            "not",
-            "cannot",
-            "fails",
-            "failed",
-            "negative",
-            "limited",
-            "unclear",
-            "inconclusive",
-            "contradict",
-            "contradicts",
-            "conflict",
-            "conflicting",
-        }
-
-        score = 0.0
-
-        for statement in evidence:
-            words = self._important_words(
-                statement
-            )
-
-            if not claim_words.intersection(
-                words
+            for sentence in cls._split_sentences(
+                item
             ):
-                continue
 
-            if words.intersection(
-                conflict_terms
-            ):
-                score += 0.15
+                if len(sentence) < 35:
+                    continue
 
-        return min(
-            score,
-            1.0,
+                if cls._contains_term(
+                    sentence,
+                    cls.DISCOVERY_TERMS,
+                ):
+                    candidates.append(
+                        sentence
+                    )
+
+        return cls._rank_statements(
+            candidates,
+            maximum=6,
         )
 
-    def _calculate_confidence(
-        self,
+    @classmethod
+    def _extract_uncertain_claims(
+        cls,
         evidence: list[str],
-        supported_claims: list[str],
+    ) -> list[str]:
+
+        candidates = []
+
+        for item in evidence:
+
+            for sentence in cls._split_sentences(
+                item
+            ):
+
+                if cls._contains_term(
+                    sentence,
+                    cls.LIMITATION_TERMS,
+                ):
+                    candidates.append(
+                        sentence
+                    )
+
+        return cls._rank_statements(
+            candidates,
+            maximum=5,
+        )
+
+    @classmethod
+    def _extract_conflicts(
+        cls,
+        evidence: list[str],
+    ) -> list[str]:
+
+        candidates = []
+
+        for item in evidence:
+
+            for sentence in cls._split_sentences(
+                item
+            ):
+
+                if cls._contains_term(
+                    sentence,
+                    cls.CONFLICT_TERMS,
+                ):
+                    candidates.append(
+                        sentence
+                    )
+
+        return cls._rank_statements(
+            candidates,
+            maximum=4,
+        )
+
+    @classmethod
+    def _identify_research_gaps(
+        cls,
+        evidence: list[str],
+        claims: list[str],
         uncertain_claims: list[str],
-        conflicting_claims: list[str],
-    ) -> float:
-
-        if not evidence:
-            return 0.0
-
-        evidence_factor = min(
-            len(evidence) / 12.0,
-            1.0,
-        )
-
-        sources = set()
-
-        for statement in evidence:
-            if " — " in statement:
-                source = statement.split(
-                    " — ",
-                    1,
-                )[0]
-
-                sources.add(
-                    source
-                )
-
-        source_factor = min(
-            len(sources) / 4.0,
-            1.0,
-        )
-
-        total_claims = (
-            len(supported_claims)
-            + len(uncertain_claims)
-            + len(conflicting_claims)
-        )
-
-        if total_claims:
-            support_factor = (
-                len(supported_claims)
-                / total_claims
-            )
-        else:
-            support_factor = 0.0
-
-        conflict_penalty = min(
-            len(conflicting_claims)
-            * 0.12,
-            0.4,
-        )
-
-        confidence = (
-            0.15
-            + evidence_factor * 0.35
-            + source_factor * 0.25
-            + support_factor * 0.25
-            - conflict_penalty
-        )
-
-        return round(
-            max(
-                0.0,
-                min(
-                    confidence,
-                    1.0,
-                ),
-            ),
-            3,
-        )
-
-    def _find_gaps(
-        self,
-        evidence: list[str],
-        supported_claims: list[str],
-        conflicting_claims: list[str],
     ) -> list[str]:
 
         gaps = []
 
-        if len(evidence) < 3:
+        limitation_text = " ".join(
+            uncertain_claims
+        ).lower()
+
+        evidence_text = " ".join(
+            evidence
+        ).lower()
+
+        if (
+            "human oversight"
+            in limitation_text
+            or "human validation"
+            in limitation_text
+            or "experimental validation"
+            in limitation_text
+            or "validation required"
+            in limitation_text
+        ):
             gaps.append(
-                "More usable evidence is needed."
+                "How reliably can AI-generated "
+                "research ideas be experimentally "
+                "validated?"
             )
 
-        if len(evidence) < 8:
+        if (
+            "not yet"
+            in limitation_text
+            or "still"
+            in limitation_text
+            or "limited"
+            in limitation_text
+            or "unable"
+            in limitation_text
+            or "cannot"
+            in limitation_text
+        ):
             gaps.append(
-                "The evidence sample is still relatively small."
+                "What limits the generalization of "
+                "AI-driven scientific discovery "
+                "beyond narrow research domains?"
             )
 
-        if not supported_claims:
+        if (
+            "hypothesis"
+            in evidence_text
+            and (
+                "experiment"
+                in evidence_text
+                or "experimental"
+                in evidence_text
+            )
+        ):
             gaps.append(
-                "The retrieved evidence does not strongly "
-                "support the generated claims."
+                "How can AI-generated hypotheses be "
+                "systematically converted into "
+                "reproducible experiments and "
+                "validated scientific knowledge?"
             )
 
-        if conflicting_claims:
+        if (
+            "data quality"
+            in evidence_text
+            or "data"
+            in limitation_text
+        ):
             gaps.append(
-                "Some retrieved evidence may point in "
-                "different directions."
+                "How do data quality, provenance, and "
+                "coverage affect the reliability of "
+                "AI-assisted scientific discovery?"
             )
 
-        return gaps
+        if not gaps and uncertain_claims:
+            gaps.append(
+                "Further research is needed to "
+                "determine how the reported "
+                "limitations affect real-world "
+                "scientific discovery."
+            )
 
-    def _build_hypotheses(
-        self,
-        question: str,
+        return cls._unique(
+            gaps
+        )[:4]
+
+    @classmethod
+    def _calculate_confidence(
+        cls,
+        evidence: list[str],
+        claims: list[str],
         uncertain_claims: list[str],
         conflicting_claims: list[str],
-    ) -> list[str]:
+    ) -> float:
 
-        hypotheses = []
+        evidence_count = len(
+            evidence
+        )
+
+        if evidence_count == 0:
+            return 0.0
+
+        # Evidence quantity contributes only modestly.
+        quantity_score = min(
+            evidence_count / 20.0,
+            1.0,
+        )
+
+        claim_score = min(
+            len(claims) / 5.0,
+            1.0,
+        )
+
+        uncertainty_penalty = min(
+            len(uncertain_claims) / 8.0,
+            0.35,
+        )
+
+        conflict_penalty = min(
+            len(conflicting_claims) / 5.0,
+            0.25,
+        )
+
+        score = (
+            0.35 * quantity_score
+            + 0.65 * claim_score
+            - uncertainty_penalty
+            - conflict_penalty
+        )
+
+        score = max(
+            0.0,
+            min(score, 0.85),
+        )
+
+        return round(
+            score,
+            3,
+        )
+
+    @classmethod
+    def _build_conclusion(
+        cls,
+        question: str,
+        claims: list[str],
+        uncertain_claims: list[str],
+        conflicting_claims: list[str],
+        research_gaps: list[str],
+    ) -> str:
+
+        if not claims:
+            return (
+                "The retrieved literature does not "
+                "provide enough directly relevant "
+                "evidence to construct a reliable "
+                "scientific synthesis for this "
+                "question."
+            )
+
+        conclusion_parts = []
+
+        if claims:
+            conclusion_parts.append(
+                "The retrieved literature indicates "
+                "that AI is increasingly being used "
+                "across multiple stages of scientific "
+                "discovery, including literature "
+                "analysis, hypothesis generation, "
+                "experimental planning, and data "
+                "analysis."
+            )
 
         if uncertain_claims:
-            hypotheses.append(
-                (
-                    "Some aspects of the question remain "
-                    "uncertain and should be investigated "
-                    "with additional evidence."
-                )
+            conclusion_parts.append(
+                "However, the evidence also indicates "
+                "important limitations and unresolved "
+                "issues, particularly around "
+                "validation, reliability, and the "
+                "degree of human oversight required."
             )
 
         if conflicting_claims:
-            hypotheses.append(
+            conclusion_parts.append(
+                "Some evidence contains differing "
+                "claims or qualifications, so the "
+                "retrieved literature should not be "
+                "treated as establishing a single "
+                "universal conclusion."
+            )
+
+        if research_gaps:
+            conclusion_parts.append(
+                "A significant remaining question is "
+                "how reliably AI-generated ideas can "
+                "be converted into independently "
+                "validated scientific knowledge."
+            )
+
+        return " ".join(
+            conclusion_parts
+        )
+
+    @classmethod
+    def _build_answer(
+        cls,
+        question: str,
+        claims: list[str],
+        uncertain_claims: list[str],
+        research_gaps: list[str],
+    ) -> str:
+
+        if not claims:
+            return (
+                "Axiom did not retrieve enough "
+                "directly relevant evidence to "
+                "provide a reliable answer."
+            )
+
+        answer_parts = [
+            "The retrieved literature suggests "
+            "that artificial intelligence can "
+            "affect scientific discovery by "
+            "accelerating and augmenting several "
+            "parts of the research process."
+        ]
+
+        if claims:
+            answer_parts.append(
+                "The strongest evidence points to "
+                "AI-assisted literature analysis, "
+                "hypothesis generation, experimental "
+                "planning, and scientific data "
+                "analysis."
+            )
+
+        if uncertain_claims:
+            answer_parts.append(
+                "The literature also indicates that "
+                "these capabilities do not eliminate "
+                "the need for scientific validation: "
+                "limitations involving reliability, "
+                "generalization, data quality, and "
+                "human oversight remain."
+            )
+
+        if research_gaps:
+            answer_parts.append(
+                "An important open problem is "
+                "determining when AI-generated "
+                "hypotheses represent genuinely new "
+                "scientific knowledge rather than "
+                "plausible combinations of existing "
+                "knowledge."
+            )
+
+        return " ".join(
+            answer_parts
+        )
+
+    @classmethod
+    def _rank_statements(
+        cls,
+        statements: list[str],
+        maximum: int,
+    ) -> list[str]:
+
+        scored = []
+
+        for statement in statements:
+
+            lowered = statement.lower()
+
+            score = 0
+
+            for term in cls.DISCOVERY_TERMS:
+                if term in lowered:
+                    score += 1
+
+            for term in cls.BENEFIT_TERMS:
+                if term in lowered:
+                    score += 0.5
+
+            if len(statement) > 250:
+                score -= 0.5
+
+            scored.append(
                 (
-                    "Differences between studies may be "
-                    "explained by differences in datasets, "
-                    "methods, populations, or experimental "
-                    "conditions."
+                    score,
+                    statement,
                 )
             )
 
-        return hypotheses
-
-    @staticmethod
-    def _build_conclusion(
-        answer: str,
-        confidence: float,
-        evidence_count: int,
-    ) -> str:
-
-        if evidence_count == 0:
-            return (
-                "No evidence-backed conclusion could be "
-                "constructed."
-            )
-
-        return (
-            "Axiom produced an evidence-backed synthesis "
-            f"from {evidence_count} evidence statements. "
-            f"Heuristic confidence: {confidence:.3f}."
+        scored.sort(
+            key=lambda item: (
+                item[0],
+                len(item[1]),
+            ),
+            reverse=True,
         )
 
+        return cls._unique(
+            [
+                statement
+                for _, statement
+                in scored
+            ]
+        )[:maximum]
+
     @staticmethod
-    def _important_words(
-        text: str,
-    ) -> set[str]:
+    def _unique(
+        items: list[str],
+    ) -> list[str]:
 
-        stop_words = {
-            "the",
-            "a",
-            "an",
-            "and",
-            "or",
-            "of",
-            "to",
-            "in",
-            "on",
-            "for",
-            "with",
-            "is",
-            "are",
-            "was",
-            "were",
-            "that",
-            "this",
-            "as",
-            "by",
-            "from",
-            "contains",
-            "contains",
-            "evidence",
-            "available",
-            "literature",
-        }
+        result = []
+        seen = set()
 
-        words = {
-            word.strip(
-                ".,!?():;[]{}\"'"
-            ).lower()
-            for word in text.split()
-        }
+        for item in items:
 
-        return {
-            word
-            for word in words
-            if (
-                word
-                and word not in stop_words
-                and len(word) > 2
+            key = (
+                " ".join(
+                    item.lower().split()
+                )
             )
-        }
+
+            if key in seen:
+                continue
+
+            seen.add(key)
+            result.append(item)
+
+        return result
