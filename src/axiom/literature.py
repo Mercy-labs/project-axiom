@@ -31,6 +31,7 @@ class LiteratureSearchResult:
 
 
 class LiteratureSearcher:
+
     STOP_WORDS = {
         "the",
         "a",
@@ -68,8 +69,60 @@ class LiteratureSearcher:
         "can",
         "may",
         "be",
-        "a",
-        "an",
+        "about",
+        "affect",
+        "effects",
+        "impact",
+        "using",
+        "use",
+        "used",
+    }
+
+    CORE_CONCEPTS = {
+        "artificial intelligence": {
+            "artificial intelligence",
+            "artificial-intelligence",
+            "machine intelligence",
+            "ai",
+            "machine learning",
+            "deep learning",
+            "generative ai",
+            "generative artificial intelligence",
+        },
+        "scientific discovery": {
+            "scientific discovery",
+            "scientific discoveries",
+            "scientific research",
+            "research discovery",
+            "automated science",
+            "ai scientist",
+            "ai scientists",
+            "scientific knowledge discovery",
+            "knowledge discovery",
+            "scientific knowledge",
+        },
+        "hypothesis generation": {
+            "hypothesis generation",
+            "hypothesis discovery",
+            "automated hypothesis",
+            "hypothesis generation system",
+        },
+        "experimental design": {
+            "experimental design",
+            "experiment design",
+            "automated experiment",
+            "automated experimentation",
+            "autonomous experimentation",
+            "robotic experimentation",
+        },
+        "research automation": {
+            "research automation",
+            "automated research",
+            "autonomous research",
+            "scientific automation",
+            "research agent",
+            "scientific agent",
+        },
     }
 
     def __init__(
@@ -97,7 +150,7 @@ class LiteratureSearcher:
     def _headers(self) -> dict[str, str]:
         return {
             "User-Agent": (
-                "Project-Axiom/0.3 "
+                "Project-Axiom/0.4 "
                 "(scientific-literature-research)"
             )
         }
@@ -121,17 +174,27 @@ class LiteratureSearcher:
         }
 
     @classmethod
+    def _normalise_text(
+        cls,
+        text: str,
+    ) -> str:
+        text = text.lower()
+
+        text = re.sub(
+            r"[^a-z0-9\s\-]",
+            " ",
+            text,
+        )
+
+        return " ".join(
+            text.split()
+        )
+
+    @classmethod
     def _build_queries(
         cls,
         question: str,
     ) -> list[str]:
-        """
-        Creates several research-oriented search queries.
-
-        The original question is preserved. Additional queries
-        investigate mechanisms, evidence, limitations, and
-        research gaps.
-        """
 
         question = " ".join(
             question.split()
@@ -163,8 +226,65 @@ class LiteratureSearcher:
         return unique
 
     # ---------------------------------------------------------
-    # Relevance ranking
+    # Domain-aware relevance
     # ---------------------------------------------------------
+
+    @classmethod
+    def _matched_concepts(
+        cls,
+        text: str,
+    ) -> set[str]:
+
+        text = cls._normalise_text(
+            text
+        )
+
+        matched = set()
+
+        for concept, phrases in (
+            cls.CORE_CONCEPTS.items()
+        ):
+            for phrase in phrases:
+                phrase = cls._normalise_text(
+                    phrase
+                )
+
+                if phrase in text:
+                    matched.add(
+                        concept
+                    )
+                    break
+
+        return matched
+
+    @classmethod
+    def _phrase_score(
+        cls,
+        text: str,
+        phrases: set[str],
+    ) -> float:
+
+        text = cls._normalise_text(
+            text
+        )
+
+        matches = 0
+
+        for phrase in phrases:
+            phrase = cls._normalise_text(
+                phrase
+            )
+
+            if phrase in text:
+                matches += 1
+
+        if not phrases:
+            return 0.0
+
+        return min(
+            matches / len(phrases),
+            1.0,
+        )
 
     @classmethod
     def _relevance_score(
@@ -173,20 +293,40 @@ class LiteratureSearcher:
         query: str,
     ) -> float:
         """
-        Calculates a lightweight retrieval relevance score.
+        Estimates retrieval relevance.
 
-        This is NOT a scientific truth score. It is only used
-        to decide which retrieved papers are more closely related
-        to the research question.
+        This is a retrieval score, not a scientific
+        confidence score.
+
+        Papers receive higher scores when they connect
+        multiple core concepts rather than merely sharing
+        generic words with the question.
         """
 
-        query_tokens = cls._tokens(query)
+        title = cls._normalise_text(
+            paper.title
+        )
+
+        abstract = cls._normalise_text(
+            paper.abstract
+        )
+
+        combined = (
+            f"{title} {abstract}"
+        )
+
+        query_normalised = (
+            cls._normalise_text(
+                query
+            )
+        )
+
+        query_tokens = cls._tokens(
+            query
+        )
 
         if not query_tokens:
             return 0.0
-
-        title = paper.title.lower()
-        abstract = paper.abstract.lower()
 
         title_tokens = cls._tokens(
             paper.title
@@ -212,44 +352,120 @@ class LiteratureSearcher:
             / len(query_tokens)
         )
 
-        score = (
-            title_overlap * 0.65
-            + abstract_overlap * 0.35
+        lexical_score = (
+            title_overlap * 0.20
+            + abstract_overlap * 0.10
         )
 
-        normalised_query = (
-            " ".join(
-                query.lower().split()
+        matched_concepts = (
+            cls._matched_concepts(
+                combined
             )
         )
 
-        if (
-            len(normalised_query) >= 12
-            and normalised_query in title
-        ):
-            score += 0.25
+        concept_score = 0.0
 
-        important_phrases = [
+        if matched_concepts:
+            concept_score += 0.20
+
+        if (
+            "artificial intelligence"
+            in matched_concepts
+        ):
+            concept_score += 0.15
+
+        if (
+            "scientific discovery"
+            in matched_concepts
+        ):
+            concept_score += 0.25
+
+        if (
+            "hypothesis generation"
+            in matched_concepts
+        ):
+            concept_score += 0.10
+
+        if (
+            "experimental design"
+            in matched_concepts
+        ):
+            concept_score += 0.10
+
+        if (
+            "research automation"
+            in matched_concepts
+        ):
+            concept_score += 0.10
+
+        exact_query_bonus = 0.0
+
+        if (
+            len(query_normalised) >= 15
+            and query_normalised in title
+        ):
+            exact_query_bonus = 0.20
+
+        important_phrases = {
             "scientific discovery",
             "scientific research",
-            "research discovery",
+            "automated science",
+            "ai scientist",
             "hypothesis generation",
             "experimental design",
-            "knowledge discovery",
-            "scientific knowledge",
-            "research methodology",
-        ]
+            "autonomous experimentation",
+            "autonomous research",
+            "scientific knowledge discovery",
+        }
+
+        phrase_hits = 0
 
         for phrase in important_phrases:
             if (
-                phrase in normalised_query
-                and phrase in title
+                phrase in query_normalised
+                and phrase in combined
             ):
-                score += 0.10
+                phrase_hits += 1
 
-        return min(
-            score,
-            1.0,
+        phrase_bonus = min(
+            phrase_hits * 0.08,
+            0.16,
+        )
+
+        # Penalise papers that discuss AI but have no
+        # meaningful scientific-research connection.
+        ai_present = (
+            "artificial intelligence"
+            in matched_concepts
+        )
+
+        science_present = (
+            "scientific discovery"
+            in matched_concepts
+            or "hypothesis generation"
+            in matched_concepts
+            or "experimental design"
+            in matched_concepts
+            or "research automation"
+            in matched_concepts
+        )
+
+        domain_penalty = 0.0
+
+        if ai_present and not science_present:
+            domain_penalty = 0.25
+
+        score = (
+            lexical_score
+            + concept_score
+            + exact_query_bonus
+            + phrase_bonus
+            - domain_penalty
+        )
+
+        return max(
+            0.0,
+            min(score, 1.0),
         )
 
     @classmethod
@@ -258,14 +474,11 @@ class LiteratureSearcher:
         papers: list[Paper],
         queries: list[str],
     ) -> list[Paper]:
-        """
-        Scores each paper against all research queries and keeps
-        the strongest relevance score.
-        """
 
         ranked = []
 
         for paper in papers:
+
             scores = [
                 cls._relevance_score(
                     paper,
@@ -279,7 +492,9 @@ class LiteratureSearcher:
                 default=0.0,
             )
 
-            ranked.append(paper)
+            ranked.append(
+                paper
+            )
 
         ranked.sort(
             key=lambda paper: (
@@ -334,7 +549,9 @@ class LiteratureSearcher:
                 )
 
                 if name:
-                    authors.append(name)
+                    authors.append(
+                        name
+                    )
 
             primary_location = item.get(
                 "primary_location",
@@ -407,6 +624,7 @@ class LiteratureSearcher:
         )
 
         for item in items:
+
             authors = []
 
             for author in item.get(
@@ -429,7 +647,9 @@ class LiteratureSearcher:
                 )
 
                 if name:
-                    authors.append(name)
+                    authors.append(
+                        name
+                    )
 
             published = (
                 item.get("published-print")
@@ -513,6 +733,7 @@ class LiteratureSearcher:
             "data",
             [],
         ):
+
             authors = [
                 author.get("name")
                 for author in item.get(
@@ -531,7 +752,9 @@ class LiteratureSearcher:
                 "DOI"
             )
 
-            url = item.get("url")
+            url = item.get(
+                "url"
+            )
 
             open_access = item.get(
                 "openAccessPdf"
@@ -617,7 +840,9 @@ class LiteratureSearcher:
                         full_name
                     )
 
-            doi = item.get("doi")
+            doi = item.get(
+                "doi"
+            )
 
             url = None
 
@@ -700,6 +925,7 @@ class LiteratureSearcher:
             "atom:entry",
             namespace,
         ):
+
             title = (
                 entry.findtext(
                     "atom:title",
@@ -926,14 +1152,11 @@ class SafeLiteratureSearcher(
         queries: list[str],
         limit: int,
     ) -> LiteratureSearchResult:
-        """
-        Runs several research queries against one source,
-        then ranks and deduplicates the results from that source.
-        """
 
         collected = []
 
         for query in queries:
+
             result = self._safe_call(
                 source=source,
                 function=function,
@@ -977,12 +1200,6 @@ class SafeLiteratureSearcher(
         query: str,
         limit: int = 10,
     ) -> list[LiteratureSearchResult]:
-        """
-        Performs multi-query, multi-source literature retrieval.
-
-        Each source receives the same research plan, then its
-        results are ranked independently.
-        """
 
         queries = self._build_queries(
             query
