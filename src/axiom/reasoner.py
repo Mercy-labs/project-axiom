@@ -5,6 +5,7 @@ from dataclasses import dataclass
 class ReasoningResult:
     claims: list[str]
     supported_claims: list[str]
+    uncertain_claims: list[str]
     conflicting_claims: list[str]
     research_gaps: list[str]
     hypotheses: list[str]
@@ -18,7 +19,7 @@ class AxiomReasoner:
     Deterministic evidence-based reasoning layer for Project Axiom.
 
     This is a research reasoning prototype. It does not determine
-    scientific truth. It classifies research questions and compares
+    scientific truth. It classifies research questions and evaluates
     claims against available evidence using transparent heuristic rules.
     """
 
@@ -40,6 +41,7 @@ class AxiomReasoner:
             )
 
         supported_claims = []
+        uncertain_claims = []
         conflicting_claims = []
 
         for claim in claims:
@@ -55,26 +57,41 @@ class AxiomReasoner:
             )
 
             if (
-                support_score > conflict_score
-                and support_score >= 0.25
-            ):
-                supported_claims.append(claim)
-
-            elif (
                 conflict_score > support_score
                 and conflict_score >= 0.25
             ):
-                conflicting_claims.append(claim)
+                conflicting_claims.append(
+                    claim
+                )
+
+            elif (
+                support_score >= 0.40
+                and support_score > conflict_score
+                and self._claim_is_reasonably_supported(
+                    claim=claim,
+                    evidence=evidence,
+                )
+            ):
+                supported_claims.append(
+                    claim
+                )
+
+            else:
+                uncertain_claims.append(
+                    claim
+                )
 
         confidence = self._calculate_confidence(
             evidence=evidence,
             supported_claims=supported_claims,
+            uncertain_claims=uncertain_claims,
             conflicting_claims=conflicting_claims,
         )
 
         research_gaps = self._find_gaps(
             evidence=evidence,
             supported_claims=supported_claims,
+            uncertain_claims=uncertain_claims,
             conflicting_claims=conflicting_claims,
         )
 
@@ -82,12 +99,14 @@ class AxiomReasoner:
             question=question,
             question_type=question_type,
             supported_claims=supported_claims,
+            uncertain_claims=uncertain_claims,
             conflicting_claims=conflicting_claims,
         )
 
         conclusion = self._build_conclusion(
             question_type=question_type,
             supported_claims=supported_claims,
+            uncertain_claims=uncertain_claims,
             conflicting_claims=conflicting_claims,
             confidence=confidence,
         )
@@ -95,6 +114,7 @@ class AxiomReasoner:
         return ReasoningResult(
             claims=claims,
             supported_claims=supported_claims,
+            uncertain_claims=uncertain_claims,
             conflicting_claims=conflicting_claims,
             research_gaps=research_gaps,
             hypotheses=hypotheses,
@@ -252,6 +272,44 @@ class AxiomReasoner:
             ),
         ]
 
+    def _claim_is_reasonably_supported(
+        self,
+        claim: str,
+        evidence: list[str],
+    ) -> bool:
+
+        claim_lower = claim.lower()
+
+        strong_claim_terms = {
+            "complete",
+            "complete description",
+            "strong causal",
+            "sufficient to establish",
+            "complete explanation",
+        }
+
+        requires_strong_evidence = any(
+            term in claim_lower
+            for term in strong_claim_terms
+        )
+
+        if requires_strong_evidence:
+            return self._has_strong_evidence(
+                evidence
+            )
+
+        return True
+
+    @staticmethod
+    def _has_strong_evidence(
+        evidence: list[str],
+    ) -> bool:
+
+        if len(evidence) < 10:
+            return False
+
+        return True
+
     def _support_score(
         self,
         claim: str,
@@ -366,6 +424,7 @@ class AxiomReasoner:
         self,
         evidence: list[str],
         supported_claims: list[str],
+        uncertain_claims: list[str],
         conflicting_claims: list[str],
     ) -> float:
 
@@ -377,15 +436,28 @@ class AxiomReasoner:
             1.0,
         )
 
-        support_factor = min(
+        total_claims = (
             len(supported_claims)
-            / max(len(supported_claims) + 1, 1),
-            1.0,
+            + len(uncertain_claims)
+            + len(conflicting_claims)
         )
+
+        if total_claims == 0:
+            support_factor = 0.0
+        else:
+            support_factor = (
+                len(supported_claims)
+                / total_claims
+            )
 
         conflict_penalty = min(
             len(conflicting_claims) * 0.15,
             0.6,
+        )
+
+        uncertainty_penalty = min(
+            len(uncertain_claims) * 0.05,
+            0.3,
         )
 
         confidence = (
@@ -393,6 +465,7 @@ class AxiomReasoner:
             + (evidence_factor * 0.4)
             + (support_factor * 0.4)
             - conflict_penalty
+            - uncertainty_penalty
         )
 
         return round(
@@ -408,6 +481,7 @@ class AxiomReasoner:
         question: str,
         question_type: str,
         supported_claims: list[str],
+        uncertain_claims: list[str],
         conflicting_claims: list[str],
     ) -> list[str]:
 
@@ -453,6 +527,15 @@ class AxiomReasoner:
                         f"further investigation of: {question}"
                     )
                 )
+
+        if uncertain_claims:
+
+            hypotheses.append(
+                (
+                    f"Some aspects of {question} remain "
+                    f"uncertain and require additional evidence."
+                )
+            )
 
         if conflicting_claims:
 
@@ -507,11 +590,35 @@ class AxiomReasoner:
         self,
         question_type: str,
         supported_claims: list[str],
+        uncertain_claims: list[str],
         conflicting_claims: list[str],
         confidence: float,
     ) -> str:
 
-        if supported_claims and not conflicting_claims:
+        if conflicting_claims:
+
+            return (
+                "The evidence contains conflicting findings, "
+                "so further investigation is required."
+            )
+
+        if uncertain_claims and not supported_claims:
+
+            return (
+                "The available evidence is relevant but "
+                "insufficient to support the current claims."
+            )
+
+        if uncertain_claims:
+
+            return (
+                "The available evidence supports some aspects "
+                "of the research question, while other claims "
+                "remain uncertain. Estimated reasoning "
+                f"confidence: {confidence:.3f}."
+            )
+
+        if supported_claims:
 
             if question_type == "descriptive":
 
@@ -546,22 +653,6 @@ class AxiomReasoner:
                 f"of {confidence:.3f}."
             )
 
-        if conflicting_claims and not supported_claims:
-
-            return (
-                "The available evidence conflicts with the "
-                "current claims, so further investigation is "
-                "required."
-            )
-
-        if supported_claims and conflicting_claims:
-
-            return (
-                "The evidence is mixed: some claims are "
-                "supported while others remain conflicting "
-                "or insufficiently supported."
-            )
-
         return (
             "The available evidence is insufficient "
             "for a strong conclusion."
@@ -571,6 +662,7 @@ class AxiomReasoner:
         self,
         evidence: list[str],
         supported_claims: list[str],
+        uncertain_claims: list[str],
         conflicting_claims: list[str],
     ) -> list[str]:
 
@@ -580,6 +672,13 @@ class AxiomReasoner:
 
             gaps.append(
                 "More independent evidence is needed."
+            )
+
+        if uncertain_claims:
+
+            gaps.append(
+                "Some claims require stronger or more "
+                "direct evidence."
             )
 
         if conflicting_claims:
@@ -593,6 +692,13 @@ class AxiomReasoner:
 
             gaps.append(
                 "No claim currently has sufficient support."
+            )
+
+        if len(evidence) < 10:
+
+            gaps.append(
+                "The current evidence sample is insufficient "
+                "to establish broad or complete coverage."
             )
 
         return gaps
