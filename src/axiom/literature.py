@@ -15,6 +15,7 @@ class Paper:
     url: str | None
     source: str
     abstract: str = ""
+    relevance: float = 0.0
 
 
 class LiteratureSearchResult:
@@ -30,6 +31,47 @@ class LiteratureSearchResult:
 
 
 class LiteratureSearcher:
+    STOP_WORDS = {
+        "the",
+        "a",
+        "an",
+        "and",
+        "or",
+        "of",
+        "to",
+        "in",
+        "on",
+        "for",
+        "with",
+        "is",
+        "are",
+        "was",
+        "were",
+        "that",
+        "this",
+        "as",
+        "by",
+        "from",
+        "how",
+        "does",
+        "do",
+        "what",
+        "which",
+        "why",
+        "when",
+        "where",
+        "into",
+        "their",
+        "they",
+        "them",
+        "than",
+        "can",
+        "may",
+        "be",
+        "a",
+        "an",
+    }
+
     def __init__(
         self,
         openalex_url: str,
@@ -55,10 +97,204 @@ class LiteratureSearcher:
     def _headers(self) -> dict[str, str]:
         return {
             "User-Agent": (
-                "Project-Axiom/0.2 "
+                "Project-Axiom/0.3 "
                 "(scientific-literature-research)"
             )
         }
+
+    # ---------------------------------------------------------
+    # Query planning
+    # ---------------------------------------------------------
+
+    @classmethod
+    def _tokens(cls, text: str) -> set[str]:
+        words = re.findall(
+            r"[a-zA-Z0-9][a-zA-Z0-9\-]+",
+            text.lower(),
+        )
+
+        return {
+            word
+            for word in words
+            if word not in cls.STOP_WORDS
+            and len(word) > 2
+        }
+
+    @classmethod
+    def _build_queries(
+        cls,
+        question: str,
+    ) -> list[str]:
+        """
+        Creates several research-oriented search queries.
+
+        The original question is preserved. Additional queries
+        investigate mechanisms, evidence, limitations, and
+        research gaps.
+        """
+
+        question = " ".join(
+            question.split()
+        ).strip()
+
+        if not question:
+            return []
+
+        queries = [
+            question,
+            f"{question} mechanisms",
+            f"{question} evidence",
+            f"{question} limitations",
+            f"{question} research gaps",
+        ]
+
+        unique = []
+        seen = set()
+
+        for query in queries:
+            normalised = query.lower().strip()
+
+            if normalised in seen:
+                continue
+
+            seen.add(normalised)
+            unique.append(query)
+
+        return unique
+
+    # ---------------------------------------------------------
+    # Relevance ranking
+    # ---------------------------------------------------------
+
+    @classmethod
+    def _relevance_score(
+        cls,
+        paper: Paper,
+        query: str,
+    ) -> float:
+        """
+        Calculates a lightweight retrieval relevance score.
+
+        This is NOT a scientific truth score. It is only used
+        to decide which retrieved papers are more closely related
+        to the research question.
+        """
+
+        query_tokens = cls._tokens(query)
+
+        if not query_tokens:
+            return 0.0
+
+        title = paper.title.lower()
+        abstract = paper.abstract.lower()
+
+        title_tokens = cls._tokens(
+            paper.title
+        )
+
+        abstract_tokens = cls._tokens(
+            paper.abstract
+        )
+
+        title_overlap = (
+            len(
+                query_tokens
+                & title_tokens
+            )
+            / len(query_tokens)
+        )
+
+        abstract_overlap = (
+            len(
+                query_tokens
+                & abstract_tokens
+            )
+            / len(query_tokens)
+        )
+
+        score = (
+            title_overlap * 0.65
+            + abstract_overlap * 0.35
+        )
+
+        normalised_query = (
+            " ".join(
+                query.lower().split()
+            )
+        )
+
+        if (
+            len(normalised_query) >= 12
+            and normalised_query in title
+        ):
+            score += 0.25
+
+        important_phrases = [
+            "scientific discovery",
+            "scientific research",
+            "research discovery",
+            "hypothesis generation",
+            "experimental design",
+            "knowledge discovery",
+            "scientific knowledge",
+            "research methodology",
+        ]
+
+        for phrase in important_phrases:
+            if (
+                phrase in normalised_query
+                and phrase in title
+            ):
+                score += 0.10
+
+        return min(
+            score,
+            1.0,
+        )
+
+    @classmethod
+    def _rank_papers(
+        cls,
+        papers: list[Paper],
+        queries: list[str],
+    ) -> list[Paper]:
+        """
+        Scores each paper against all research queries and keeps
+        the strongest relevance score.
+        """
+
+        ranked = []
+
+        for paper in papers:
+            scores = [
+                cls._relevance_score(
+                    paper,
+                    query,
+                )
+                for query in queries
+            ]
+
+            paper.relevance = max(
+                scores,
+                default=0.0,
+            )
+
+            ranked.append(paper)
+
+        ranked.sort(
+            key=lambda paper: (
+                paper.relevance,
+                bool(paper.abstract),
+                paper.year or 0,
+            ),
+            reverse=True,
+        )
+
+        return ranked
+
+    # ---------------------------------------------------------
+    # OpenAlex
+    # ---------------------------------------------------------
 
     def search_openalex(
         self,
@@ -81,7 +317,10 @@ class LiteratureSearcher:
         data = response.json()
         papers = []
 
-        for item in data.get("results", []):
+        for item in data.get(
+            "results",
+            [],
+        ):
             authors = []
 
             for author in item.get(
@@ -104,9 +343,10 @@ class LiteratureSearcher:
 
             papers.append(
                 Paper(
-                    title=item.get(
-                        "title"
-                    ) or "Untitled",
+                    title=(
+                        item.get("title")
+                        or "Untitled"
+                    ),
                     authors=authors,
                     year=item.get(
                         "publication_year"
@@ -128,6 +368,10 @@ class LiteratureSearcher:
 
         return papers
 
+    # ---------------------------------------------------------
+    # Crossref
+    # ---------------------------------------------------------
+
     def search_crossref(
         self,
         query: str,
@@ -140,7 +384,9 @@ class LiteratureSearcher:
         }
 
         if self.crossref_mailto:
-            params["mailto"] = self.crossref_mailto
+            params["mailto"] = (
+                self.crossref_mailto
+            )
 
         response = requests.get(
             self.crossref_url,
@@ -171,12 +417,16 @@ class LiteratureSearcher:
                     "given",
                     "",
                 )
+
                 family = author.get(
                     "family",
                     "",
                 )
 
-                name = f"{given} {family}".strip()
+                name = (
+                    f"{given} {family}"
+                    .strip()
+                )
 
                 if name:
                     authors.append(name)
@@ -203,7 +453,10 @@ class LiteratureSearcher:
             )
 
             abstract = self._clean_html(
-                item.get("abstract", "")
+                item.get(
+                    "abstract",
+                    "",
+                )
             )
 
             papers.append(
@@ -219,6 +472,10 @@ class LiteratureSearcher:
             )
 
         return papers
+
+    # ---------------------------------------------------------
+    # Semantic Scholar
+    # ---------------------------------------------------------
 
     def search_semantic_scholar(
         self,
@@ -270,7 +527,9 @@ class LiteratureSearcher:
                 or {}
             )
 
-            doi = external_ids.get("DOI")
+            doi = external_ids.get(
+                "DOI"
+            )
 
             url = item.get("url")
 
@@ -278,16 +537,18 @@ class LiteratureSearcher:
                 "openAccessPdf"
             )
 
-            if open_access and open_access.get(
-                "url"
+            if (
+                open_access
+                and open_access.get("url")
             ):
                 url = open_access["url"]
 
             papers.append(
                 Paper(
-                    title=item.get(
-                        "title"
-                    ) or "Untitled",
+                    title=(
+                        item.get("title")
+                        or "Untitled"
+                    ),
                     authors=authors,
                     year=item.get("year"),
                     doi=doi,
@@ -301,6 +562,10 @@ class LiteratureSearcher:
             )
 
         return papers
+
+    # ---------------------------------------------------------
+    # Europe PMC
+    # ---------------------------------------------------------
 
     def search_europe_pmc(
         self,
@@ -348,7 +613,9 @@ class LiteratureSearcher:
                 )
 
                 if full_name:
-                    authors.append(full_name)
+                    authors.append(
+                        full_name
+                    )
 
             doi = item.get("doi")
 
@@ -359,6 +626,7 @@ class LiteratureSearcher:
                     "https://europepmc.org/articles/"
                     f"{item['pmcid']}"
                 )
+
             elif item.get("pmid"):
                 url = (
                     "https://europepmc.org/article/"
@@ -367,9 +635,10 @@ class LiteratureSearcher:
 
             papers.append(
                 Paper(
-                    title=item.get(
-                        "title"
-                    ) or "Untitled",
+                    title=(
+                        item.get("title")
+                        or "Untitled"
+                    ),
                     authors=authors,
                     year=self._safe_int(
                         item.get("pubYear")
@@ -378,13 +647,19 @@ class LiteratureSearcher:
                     url=url,
                     source="Europe PMC",
                     abstract=(
-                        item.get("abstractText")
+                        item.get(
+                            "abstractText"
+                        )
                         or ""
                     ),
                 )
             )
 
         return papers
+
+    # ---------------------------------------------------------
+    # arXiv
+    # ---------------------------------------------------------
 
     def search_arxiv(
         self,
@@ -395,7 +670,9 @@ class LiteratureSearcher:
         response = requests.get(
             self.arxiv_url,
             params={
-                "search_query": f"all:{query}",
+                "search_query": (
+                    f"all:{query}"
+                ),
                 "start": 0,
                 "max_results": limit,
                 "sortBy": "relevance",
@@ -477,7 +754,9 @@ class LiteratureSearcher:
                 "atom:link",
                 namespace,
             ):
-                href = link.attrib.get("href")
+                href = link.attrib.get(
+                    "href"
+                )
 
                 if href:
                     url = href
@@ -485,19 +764,23 @@ class LiteratureSearcher:
 
             doi = None
 
-            for identifier in entry.findall(
+            identifier = entry.findtext(
                 "atom:id",
-                namespace,
-            ):
-                identifier_text = (
-                    identifier.text or ""
-                )
+                default="",
+                namespaces=namespace,
+            )
 
-                if "doi.org" in identifier_text:
-                    doi = (
-                        identifier_text
-                        .split("doi.org/", 1)[-1]
-                    )
+            if (
+                identifier
+                and "doi.org" in identifier
+            ):
+                doi = (
+                    identifier
+                    .split(
+                        "doi.org/",
+                        1,
+                    )[-1]
+                )
 
             papers.append(
                 Paper(
@@ -513,6 +796,10 @@ class LiteratureSearcher:
 
         return papers
 
+    # ---------------------------------------------------------
+    # Helpers
+    # ---------------------------------------------------------
+
     @staticmethod
     def _safe_int(
         value,
@@ -520,6 +807,7 @@ class LiteratureSearcher:
 
         try:
             return int(value)
+
         except (
             TypeError,
             ValueError,
@@ -539,7 +827,10 @@ class LiteratureSearcher:
             [],
         )
 
-        if not parts or not parts[0]:
+        if (
+            not parts
+            or not parts[0]
+        ):
             return None
 
         return LiteratureSearcher._safe_int(
@@ -628,11 +919,74 @@ class SafeLiteratureSearcher(
                 error=str(error),
             )
 
+    def _search_source(
+        self,
+        source: str,
+        function,
+        queries: list[str],
+        limit: int,
+    ) -> LiteratureSearchResult:
+        """
+        Runs several research queries against one source,
+        then ranks and deduplicates the results from that source.
+        """
+
+        collected = []
+
+        for query in queries:
+            result = self._safe_call(
+                source=source,
+                function=function,
+                query=query,
+                limit=limit,
+            )
+
+            if result.error:
+                continue
+
+            collected.extend(
+                result.papers
+            )
+
+        if not collected:
+            return LiteratureSearchResult(
+                papers=[],
+                source=source,
+                error=(
+                    "No results returned "
+                    "from source."
+                ),
+            )
+
+        collected = self._deduplicate(
+            collected
+        )
+
+        collected = self._rank_papers(
+            collected,
+            queries,
+        )
+
+        return LiteratureSearchResult(
+            papers=collected[:limit],
+            source=source,
+        )
+
     def search_with_status(
         self,
         query: str,
         limit: int = 10,
     ) -> list[LiteratureSearchResult]:
+        """
+        Performs multi-query, multi-source literature retrieval.
+
+        Each source receives the same research plan, then its
+        results are ranked independently.
+        """
+
+        queries = self._build_queries(
+            query
+        )
 
         jobs = {
             "OpenAlex": self.search_openalex,
@@ -654,10 +1008,10 @@ class SafeLiteratureSearcher(
 
             futures = {
                 executor.submit(
-                    self._safe_call,
+                    self._search_source,
                     source,
                     function,
-                    query,
+                    queries,
                     limit,
                 ): source
                 for source, function
@@ -707,9 +1061,20 @@ class SafeLiteratureSearcher(
                 result.papers
             )
 
-        return self._deduplicate(
+        papers = self._deduplicate(
             papers
         )
+
+        queries = self._build_queries(
+            query
+        )
+
+        papers = self._rank_papers(
+            papers,
+            queries,
+        )
+
+        return papers
 
     @staticmethod
     def _normalise_title(
@@ -759,10 +1124,14 @@ class SafeLiteratureSearcher(
                 continue
 
             if doi:
-                seen_dois.add(doi)
+                seen_dois.add(
+                    doi
+                )
 
             if title:
-                seen_titles.add(title)
+                seen_titles.add(
+                    title
+                )
 
             unique.append(
                 paper
