@@ -27,7 +27,6 @@ class ResearchReport:
             "=== PROJECT AXIOM RESEARCH REPORT ===",
             "",
             f"Question: {self.question}",
-            f"Hypothesis: {self.hypothesis}",
             "",
             "Literature:",
             f"  Papers found: {self.papers_found}",
@@ -45,7 +44,12 @@ class ResearchReport:
             lines.extend(
                 [
                     "",
-                    "=== AXIOM REASONING ===",
+                    "=== AXIOM LITERATURE REASONING ===",
+                    "",
+                    (
+                        "Question type: "
+                        f"{self.reasoning.question_type}"
+                    ),
                     "",
                     "Claims:",
                 ]
@@ -64,6 +68,24 @@ class ResearchReport:
             if self.reasoning.supported_claims:
 
                 for claim in self.reasoning.supported_claims:
+                    lines.append(
+                        f"  - {claim}"
+                    )
+
+            else:
+
+                lines.append(
+                    "  - None identified."
+                )
+
+            lines.append("")
+            lines.append(
+                "Uncertain claims:"
+            )
+
+            if self.reasoning.uncertain_claims:
+
+                for claim in self.reasoning.uncertain_claims:
                     lines.append(
                         f"  - {claim}"
                     )
@@ -145,7 +167,12 @@ class ResearchReport:
         lines.extend(
             [
                 "",
-                "Computational observations:",
+                "=== COMPUTATIONAL EXPERIMENT ===",
+                "",
+                "Experiment hypothesis:",
+                f"  {self.hypothesis}",
+                "",
+                "Observations:",
             ]
         )
 
@@ -160,8 +187,22 @@ class ResearchReport:
         lines.extend(
             [
                 "",
-                f"Conclusion: {self.conclusion}",
-                f"Verification: {verification}",
+                "Experiment conclusion:",
+                f"  {self.conclusion}",
+                "",
+                (
+                    "Experiment verification: "
+                    f"{verification}"
+                ),
+                "",
+                (
+                    "Note: Experiment verification only "
+                    "indicates that the computational "
+                    "experiment passed Axiom's current "
+                    "verification rules. It does not establish "
+                    "that the real-world research question "
+                    "has been scientifically proven."
+                ),
             ]
         )
 
