@@ -22,12 +22,51 @@ def main() -> None:
         )
         raise SystemExit(1)
 
+    print(
+        "=== AXIOM RESEARCH STARTED ==="
+    )
+    print(
+        f"Question: {question}"
+    )
+    print()
+
+    print(
+        "Running literature research..."
+    )
+
     report = run_research(
         question
     )
 
     print(
-        report.render()
+        f"Research result type: {type(report).__name__}"
+    )
+
+    if report is None:
+        print(
+            "ERROR: run_research() returned None."
+        )
+        raise SystemExit(1)
+
+    print(
+        "Rendering research report..."
+    )
+
+    rendered = report.render()
+
+    print(
+        f"Rendered result type: {type(rendered).__name__}"
+    )
+
+    if rendered is None:
+        print(
+            "ERROR: report.render() returned None."
+        )
+        raise SystemExit(1)
+
+    print()
+    print(
+        rendered
     )
 
 
