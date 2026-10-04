@@ -1,6 +1,6 @@
 import sys
 
-from .axiom import run_axiom
+from .axiom import run_research
 
 
 def main() -> None:
@@ -22,7 +22,7 @@ def main() -> None:
         )
         raise SystemExit(1)
 
-    report = run_axiom(
+    report = run_research(
         question
     )
 
