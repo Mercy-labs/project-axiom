@@ -51,7 +51,7 @@ def _source_lines(
         if result.error:
             lines.append(
                 f"{result.source}: "
-                f"unavailable"
+                "unavailable"
             )
         else:
             lines.append(
@@ -111,6 +111,16 @@ def run_axiom(
     question: str,
 ) -> ResearchReport:
 
+    """
+    Legacy computational research path.
+
+    This function is kept for the existing simulation
+    and machine-learning components.
+
+    The main Axiom entry point does NOT use this path.
+    Real literature research is handled by run_research().
+    """
+
     from .experiment import SimulationEngine
     from .evaluator import EvidenceEvaluator
     from .planner import ResearchPlanner
@@ -125,22 +135,6 @@ def run_axiom(
     from .model import ReasoningModel
 
     config = Config.from_environment()
-
-    researcher = _build_researcher(
-        config
-    )
-
-    research_context = (
-        researcher.investigate(
-            question
-        )
-    )
-
-    reasoning = ReasoningModel()
-
-    hypothesis = reasoning.choose_hypothesis(
-        research_context.hypotheses
-    )
 
     simulator = SimulationEngine()
     evaluator = EvidenceEvaluator()
@@ -187,6 +181,19 @@ def run_axiom(
         )
 
         tested.add(value)
+
+    hypothesis_engine = HypothesisEngine()
+
+    hypotheses = hypothesis_engine.generate(
+        question=question,
+        knowledge_context="",
+    )
+
+    reasoning = ReasoningModel()
+
+    hypothesis = reasoning.choose_hypothesis(
+        hypotheses
+    )
 
     for cycle in range(
         1,
@@ -301,32 +308,40 @@ def run_axiom(
             final_evaluation.conclusion
         ),
         verification=verification,
-        papers_found=(
-            research_context.papers_found
-        ),
-        sources=_source_lines(
-            research_context.source_status
-        ),
-        reasoning=(
-            research_context.reasoning
-        ),
-        evidence=(
-            research_context.evidence
-        ),
+        papers_found=0,
+        sources=[],
+        reasoning=None,
+        evidence=[],
     )
 
 
 def main() -> None:
 
     question = (
-        "How does the experimental input affect "
-        "the measured output in our computational "
-        "research environment?"
+        "How does artificial intelligence "
+        "affect scientific discovery?"
     )
 
-    report = run_axiom(
+    print(
+        "=== AXIOM RESEARCH STARTED ==="
+    )
+
+    print(
+        f"Question: {question}"
+    )
+
+    print()
+
+    print(
+        "Running real scientific "
+        "literature research..."
+    )
+
+    report = run_research(
         question
     )
+
+    print()
 
     print(
         report.render()
