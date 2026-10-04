@@ -3,22 +3,10 @@ from .literature import SafeLiteratureSearcher
 from .knowledge import KnowledgeBase
 from .hypothesis import HypothesisEngine
 from .research import ScientificResearcher
-from .experiment import SimulationEngine
-from .evaluator import EvidenceEvaluator
-from .planner import ResearchPlanner
-from .memory import ResearchMemory, MemoryEntry
-from .verification import Verifier
 from .report import ResearchReport
-from .ml.dataset import build_dataset
-from .ml.predictor import MLPredictor
-from .ml.selector import ExperimentSelector
-from .model import ReasoningModel
 
 
-def run_axiom(question: str) -> ResearchReport:
-
-    config = Config.from_environment()
-
+def _build_researcher(config: Config) -> ScientificResearcher:
     knowledge = KnowledgeBase()
 
     literature = SafeLiteratureSearcher(
@@ -26,11 +14,80 @@ def run_axiom(question: str) -> ResearchReport:
         crossref_url=config.crossref_url,
     )
 
-    researcher = ScientificResearcher(
+    return ScientificResearcher(
         literature_searcher=literature,
         knowledge_base=knowledge,
         hypothesis_engine=HypothesisEngine(),
     )
+
+
+def _source_lines(source_status) -> list[str]:
+    lines = []
+
+    for result in source_status:
+        if result.error:
+            lines.append(
+                f"{result.source}: unavailable"
+            )
+        else:
+            lines.append(
+                f"{result.source}: "
+                f"{len(result.papers)} results"
+            )
+
+    return lines
+
+
+def run_research(question: str) -> ResearchReport:
+    """
+    Run Axiom's real literature-based research pipeline.
+
+    This path does not run the computational simulation.
+    """
+
+    config = Config.from_environment()
+
+    researcher = _build_researcher(config)
+
+    research_context = researcher.investigate(
+        question
+    )
+
+    return ResearchReport(
+        question=question,
+        hypothesis=None,
+        observations=[],
+        conclusion=None,
+        verification=None,
+        papers_found=research_context.papers_found,
+        sources=_source_lines(
+            research_context.source_status
+        ),
+        reasoning=research_context.reasoning,
+    )
+
+
+def run_axiom(question: str) -> ResearchReport:
+    """
+    Run the original full Axiom experiment pipeline.
+
+    This remains separate from the real literature-only
+    research path while the research architecture is built.
+    """
+
+    from .experiment import SimulationEngine
+    from .evaluator import EvidenceEvaluator
+    from .planner import ResearchPlanner
+    from .memory import ResearchMemory, MemoryEntry
+    from .verification import Verifier
+    from .ml.dataset import build_dataset
+    from .ml.predictor import MLPredictor
+    from .ml.selector import ExperimentSelector
+    from .model import ReasoningModel
+
+    config = Config.from_environment()
+
+    researcher = _build_researcher(config)
 
     research_context = researcher.investigate(
         question
@@ -176,20 +233,6 @@ def run_axiom(question: str) -> ResearchReport:
 
     memory.save()
 
-    source_lines = []
-
-    for result in research_context.source_status:
-
-        if result.error:
-            source_lines.append(
-                f"{result.source}: unavailable"
-            )
-        else:
-            source_lines.append(
-                f"{result.source}: "
-                f"{len(result.papers)} results"
-            )
-
     return ResearchReport(
         question=question,
         hypothesis=hypothesis.statement,
@@ -199,10 +242,10 @@ def run_axiom(question: str) -> ResearchReport:
         ],
         conclusion=final_evaluation.conclusion,
         verification=verification,
-        papers_found=(
-            research_context.papers_found
+        papers_found=research_context.papers_found,
+        sources=_source_lines(
+            research_context.source_status
         ),
-        sources=source_lines,
         reasoning=research_context.reasoning,
     )
 
