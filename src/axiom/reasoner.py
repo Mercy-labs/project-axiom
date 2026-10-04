@@ -15,18 +15,35 @@ class ReasoningResult:
     answer: str = ""
     evidence_used: list[str] | None = None
 
+    @property
+    def supported_claims(self) -> list[str]:
+        """
+        Backward-compatible name used by report.py.
+
+        The reasoning layer now calls these 'claims',
+        but older report code expects 'supported_claims'.
+        """
+        return self.claims
+
+    @property
+    def gaps(self) -> list[str]:
+        """
+        Backward-compatible alias for research_gaps.
+        """
+        return self.research_gaps
+
 
 class AxiomReasoner:
     """
     Evidence-grounded scientific reasoning layer.
 
-    This component does not try to "prove" a scientific claim.
-    It analyses the retrieved evidence and produces a cautious
-    synthesis based only on what the evidence supports.
+    This component does not try to prove a scientific claim.
+    It analyses retrieved evidence and produces a cautious
+    synthesis based on what the evidence supports.
 
-    Confidence here represents the strength and consistency of the
-    retrieved evidence, not the probability that a scientific claim
-    is true.
+    Confidence represents the strength and consistency of the
+    retrieved evidence. It is NOT the probability that a
+    scientific claim is true.
     """
 
     LIMITATION_TERMS = {
@@ -280,10 +297,8 @@ class AxiomReasoner:
 
         return "general"
 
-
-    @classmethod
+    @staticmethod
     def _split_sentences(
-        cls,
         text: str,
     ) -> list[str]:
 
@@ -505,7 +520,6 @@ class AxiomReasoner:
         if evidence_count == 0:
             return 0.0
 
-        # Evidence quantity contributes only modestly.
         quantity_score = min(
             evidence_count / 20.0,
             1.0,
