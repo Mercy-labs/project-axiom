@@ -27,7 +27,9 @@ class ResearchReport:
 
         if self.sources:
             for source in self.sources:
-                lines.append(f"  {source}")
+                lines.append(
+                    f"  {source}"
+                )
 
         if self.reasoning:
             lines.extend(
@@ -35,7 +37,8 @@ class ResearchReport:
                     "",
                     "=== AXIOM LITERATURE REASONING ===",
                     "",
-                    f"Question type: {self.reasoning.question_type}",
+                    f"Question type: "
+                    f"{self.reasoning.question_type}",
                     "",
                     "Claims:",
                 ]
@@ -43,9 +46,13 @@ class ResearchReport:
 
             if self.reasoning.claims:
                 for claim in self.reasoning.claims:
-                    lines.append(f"  - {claim}")
+                    lines.append(
+                        f"  - {claim}"
+                    )
             else:
-                lines.append("  - None identified.")
+                lines.append(
+                    "  - None identified."
+                )
 
             lines.extend(
                 [
@@ -56,9 +63,13 @@ class ResearchReport:
 
             if self.reasoning.supported_claims:
                 for claim in self.reasoning.supported_claims:
-                    lines.append(f"  - {claim}")
+                    lines.append(
+                        f"  - {claim}"
+                    )
             else:
-                lines.append("  - None identified.")
+                lines.append(
+                    "  - None identified."
+                )
 
             lines.extend(
                 [
@@ -69,9 +80,13 @@ class ResearchReport:
 
             if self.reasoning.uncertain_claims:
                 for claim in self.reasoning.uncertain_claims:
-                    lines.append(f"  - {claim}")
+                    lines.append(
+                        f"  - {claim}"
+                    )
             else:
-                lines.append("  - None identified.")
+                lines.append(
+                    "  - None identified."
+                )
 
             lines.extend(
                 [
@@ -82,9 +97,13 @@ class ResearchReport:
 
             if self.reasoning.conflicting_claims:
                 for claim in self.reasoning.conflicting_claims:
-                    lines.append(f"  - {claim}")
+                    lines.append(
+                        f"  - {claim}"
+                    )
             else:
-                lines.append("  - None identified.")
+                lines.append(
+                    "  - None identified."
+                )
 
             lines.extend(
                 [
@@ -95,6 +114,96 @@ class ResearchReport:
 
             if self.reasoning.research_gaps:
                 for gap in self.reasoning.research_gaps:
-                    lines.append(f"  - {gap}")
+                    lines.append(
+                        f"  - {gap}"
+                    )
             else:
-                lines
+                lines.append(
+                    "  - None identified."
+                )
+
+            lines.extend(
+                [
+                    "",
+                    "Reasoning hypotheses:",
+                ]
+            )
+
+            if self.reasoning.hypotheses:
+                for hypothesis in self.reasoning.hypotheses:
+                    lines.append(
+                        f"  - {hypothesis}"
+                    )
+            else:
+                lines.append(
+                    "  - None identified."
+                )
+
+            lines.extend(
+                [
+                    "",
+                    f"Reasoning confidence: "
+                    f"{self.reasoning.confidence:.3f}",
+                    f"Reasoning conclusion: "
+                    f"{self.reasoning.conclusion}",
+                ]
+            )
+
+        if (
+            self.hypothesis is not None
+            and self.verification is not None
+        ):
+            lines.extend(
+                [
+                    "",
+                    "=== COMPUTATIONAL EXPERIMENT ===",
+                    "",
+                    f"Experiment hypothesis: "
+                    f"{self.hypothesis}",
+                    "",
+                    "Observations:",
+                ]
+            )
+
+            if self.observations:
+                for index, observation in enumerate(
+                    self.observations,
+                    start=1,
+                ):
+                    lines.append(
+                        f"  {index}. {observation:.4f}"
+                    )
+            else:
+                lines.append(
+                    "  - None recorded."
+                )
+
+            lines.extend(
+                [
+                    "",
+                    f"Experiment conclusion: "
+                    f"{self.conclusion}",
+                    f"Experiment verification: "
+                    f"{'VERIFIED' if self.verification.verified else 'NOT VERIFIED'}",
+                    "",
+                    "Note: Experiment verification only "
+                    "evaluates the computational experiment. "
+                    "It does not prove the real-world "
+                    "research question.",
+                ]
+            )
+
+            if self.verification.reasons:
+                lines.extend(
+                    [
+                        "",
+                        "Verification notes:",
+                    ]
+                )
+
+                for reason in self.verification.reasons:
+                    lines.append(
+                        f"  - {reason}"
+                    )
+
+        return "\n".join(lines)
