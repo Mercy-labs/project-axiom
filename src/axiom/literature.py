@@ -78,6 +78,58 @@ class LiteratureSearcher:
         "used",
     }
 
+    NEGATIVE_DOMAIN_TERMS = {
+        "business",
+        "businesses",
+        "firm",
+        "firms",
+        "enterprise",
+        "enterprises",
+        "corporate",
+        "company",
+        "companies",
+        "esg",
+        "productivity",
+        "profit",
+        "profits",
+        "marketing",
+        "consumer",
+        "consumers",
+        "finance",
+        "financial",
+        "stock",
+        "investment",
+        "governance",
+        "sustainability",
+        "environmental performance",
+        "green total factor productivity",
+    }
+
+    DISCOVERY_ANCHORS = {
+        "scientific discovery",
+        "scientific discoveries",
+        "scientific knowledge",
+        "scientific knowledge discovery",
+        "automated science",
+        "autonomous science",
+        "ai scientist",
+        "ai scientists",
+        "hypothesis generation",
+        "hypothesis discovery",
+        "scientific hypothesis",
+        "experimental design",
+        "experiment design",
+        "automated experimentation",
+        "autonomous experimentation",
+        "scientific reasoning",
+        "research automation",
+        "autonomous research",
+        "literature-based discovery",
+        "machine-assisted discovery",
+        "scientific research",
+        "research discovery",
+    }
+
     CORE_CONCEPTS = {
         "artificial intelligence": {
             "artificial intelligence",
@@ -88,6 +140,10 @@ class LiteratureSearcher:
             "deep learning",
             "generative ai",
             "generative artificial intelligence",
+            "large language model",
+            "large language models",
+            "llm",
+            "llms",
         },
         "scientific discovery": {
             "scientific discovery",
@@ -95,6 +151,7 @@ class LiteratureSearcher:
             "scientific research",
             "research discovery",
             "automated science",
+            "autonomous science",
             "ai scientist",
             "ai scientists",
             "scientific knowledge discovery",
@@ -106,6 +163,7 @@ class LiteratureSearcher:
             "hypothesis discovery",
             "automated hypothesis",
             "hypothesis generation system",
+            "scientific hypothesis",
         },
         "experimental design": {
             "experimental design",
@@ -114,6 +172,8 @@ class LiteratureSearcher:
             "automated experimentation",
             "autonomous experimentation",
             "robotic experimentation",
+            "experimental planning",
+            "experiment planning",
         },
         "research automation": {
             "research automation",
@@ -121,7 +181,11 @@ class LiteratureSearcher:
             "autonomous research",
             "scientific automation",
             "research agent",
+            "research agents",
             "scientific agent",
+            "scientific agents",
+            "agentic science",
+            "agentic scientific",
         },
     }
 
@@ -150,13 +214,13 @@ class LiteratureSearcher:
     def _headers(self) -> dict[str, str]:
         return {
             "User-Agent": (
-                "Project-Axiom/0.4 "
+                "Project-Axiom/0.5 "
                 "(scientific-literature-research)"
             )
         }
 
     # ---------------------------------------------------------
-    # Query planning
+    # Text processing
     # ---------------------------------------------------------
 
     @classmethod
@@ -178,6 +242,7 @@ class LiteratureSearcher:
         cls,
         text: str,
     ) -> str:
+
         text = text.lower()
 
         text = re.sub(
@@ -189,6 +254,10 @@ class LiteratureSearcher:
         return " ".join(
             text.split()
         )
+
+    # ---------------------------------------------------------
+    # Query planning
+    # ---------------------------------------------------------
 
     @classmethod
     def _build_queries(
@@ -209,6 +278,18 @@ class LiteratureSearcher:
             f"{question} evidence",
             f"{question} limitations",
             f"{question} research gaps",
+
+            # Discovery-specific queries.
+            '"artificial intelligence" "scientific discovery"',
+            '"AI" "scientific discovery"',
+            '"artificial intelligence" "hypothesis generation"',
+            '"AI" "hypothesis generation"',
+            '"artificial intelligence" "experimental design" science',
+            '"AI" "automated scientific discovery"',
+            '"AI scientist" scientific research',
+            '"autonomous scientific discovery"',
+            '"agentic science" scientific discovery',
+            '"AI for science" discovery',
         ]
 
         unique = []
@@ -226,7 +307,7 @@ class LiteratureSearcher:
         return unique
 
     # ---------------------------------------------------------
-    # Domain-aware relevance
+    # Concept detection
     # ---------------------------------------------------------
 
     @classmethod
@@ -257,34 +338,9 @@ class LiteratureSearcher:
 
         return matched
 
-    @classmethod
-    def _phrase_score(
-        cls,
-        text: str,
-        phrases: set[str],
-    ) -> float:
-
-        text = cls._normalise_text(
-            text
-        )
-
-        matches = 0
-
-        for phrase in phrases:
-            phrase = cls._normalise_text(
-                phrase
-            )
-
-            if phrase in text:
-                matches += 1
-
-        if not phrases:
-            return 0.0
-
-        return min(
-            matches / len(phrases),
-            1.0,
-        )
+    # ---------------------------------------------------------
+    # Relevance scoring
+    # ---------------------------------------------------------
 
     @classmethod
     def _relevance_score(
@@ -293,14 +349,18 @@ class LiteratureSearcher:
         query: str,
     ) -> float:
         """
-        Estimates retrieval relevance.
+        Estimate retrieval relevance.
 
-        This is a retrieval score, not a scientific
-        confidence score.
+        This is NOT scientific confidence.
 
-        Papers receive higher scores when they connect
-        multiple core concepts rather than merely sharing
-        generic words with the question.
+        The score attempts to answer:
+
+        "How strongly is this paper connected to
+        AI-driven scientific discovery?"
+
+        It deliberately penalises generic AI application
+        papers that belong primarily to business,
+        corporate, financial, or ESG domains.
         """
 
         title = cls._normalise_text(
@@ -336,6 +396,10 @@ class LiteratureSearcher:
             paper.abstract
         )
 
+        # -----------------------------------------------------
+        # Basic lexical overlap
+        # -----------------------------------------------------
+
         title_overlap = (
             len(
                 query_tokens
@@ -357,6 +421,10 @@ class LiteratureSearcher:
             + abstract_overlap * 0.10
         )
 
+        # -----------------------------------------------------
+        # Core concept detection
+        # -----------------------------------------------------
+
         matched_concepts = (
             cls._matched_concepts(
                 combined
@@ -365,38 +433,59 @@ class LiteratureSearcher:
 
         concept_score = 0.0
 
-        if matched_concepts:
-            concept_score += 0.20
-
         if (
             "artificial intelligence"
             in matched_concepts
         ):
-            concept_score += 0.15
+            concept_score += 0.10
 
         if (
             "scientific discovery"
             in matched_concepts
         ):
-            concept_score += 0.25
+            concept_score += 0.35
 
         if (
             "hypothesis generation"
             in matched_concepts
         ):
-            concept_score += 0.10
+            concept_score += 0.20
 
         if (
             "experimental design"
             in matched_concepts
         ):
-            concept_score += 0.10
+            concept_score += 0.15
 
         if (
             "research automation"
             in matched_concepts
         ):
-            concept_score += 0.10
+            concept_score += 0.15
+
+        # -----------------------------------------------------
+        # Discovery anchor score
+        # -----------------------------------------------------
+
+        anchor_hits = 0
+
+        for anchor in cls.DISCOVERY_ANCHORS:
+
+            anchor = cls._normalise_text(
+                anchor
+            )
+
+            if anchor in combined:
+                anchor_hits += 1
+
+        anchor_bonus = min(
+            anchor_hits * 0.08,
+            0.24,
+        )
+
+        # -----------------------------------------------------
+        # Exact query match
+        # -----------------------------------------------------
 
         exact_query_bonus = 0.0
 
@@ -405,6 +494,10 @@ class LiteratureSearcher:
             and query_normalised in title
         ):
             exact_query_bonus = 0.20
+
+        # -----------------------------------------------------
+        # Query phrase matching
+        # -----------------------------------------------------
 
         important_phrases = {
             "scientific discovery",
@@ -421,6 +514,7 @@ class LiteratureSearcher:
         phrase_hits = 0
 
         for phrase in important_phrases:
+
             if (
                 phrase in query_normalised
                 and phrase in combined
@@ -432,8 +526,10 @@ class LiteratureSearcher:
             0.16,
         )
 
-        # Penalise papers that discuss AI but have no
-        # meaningful scientific-research connection.
+        # -----------------------------------------------------
+        # Scientific connection requirement
+        # -----------------------------------------------------
+
         ai_present = (
             "artificial intelligence"
             in matched_concepts
@@ -452,12 +548,66 @@ class LiteratureSearcher:
 
         domain_penalty = 0.0
 
-        if ai_present and not science_present:
-            domain_penalty = 0.25
+        # Generic AI papers should not rank highly merely
+        # because they contain the phrase "artificial
+        # intelligence".
+        if (
+            ai_present
+            and not science_present
+        ):
+            domain_penalty += 0.35
+
+        # -----------------------------------------------------
+        # Non-scientific application penalty
+        # -----------------------------------------------------
+
+        negative_hits = 0
+
+        for term in cls.NEGATIVE_DOMAIN_TERMS:
+
+            term = cls._normalise_text(
+                term
+            )
+
+            if term in combined:
+                negative_hits += 1
+
+        # Soft penalty because some scientific papers can
+        # legitimately mention these domains.
+        if negative_hits:
+            domain_penalty += min(
+                negative_hits * 0.06,
+                0.24,
+            )
+
+        # If several business/application signals dominate
+        # and there is no scientific-discovery signal,
+        # apply a stronger penalty.
+        if (
+            negative_hits >= 2
+            and not science_present
+        ):
+            domain_penalty += 0.20
+
+        # -----------------------------------------------------
+        # Strong AI + discovery connection
+        # -----------------------------------------------------
+
+        if (
+            ai_present
+            and science_present
+            and anchor_hits >= 1
+        ):
+            concept_score += 0.10
+
+        # -----------------------------------------------------
+        # Final score
+        # -----------------------------------------------------
 
         score = (
             lexical_score
             + concept_score
+            + anchor_bonus
             + exact_query_bonus
             + phrase_bonus
             - domain_penalty
@@ -536,12 +686,14 @@ class LiteratureSearcher:
             "results",
             [],
         ):
+
             authors = []
 
             for author in item.get(
                 "authorships",
                 [],
             ):
+
                 name = (
                     author
                     .get("author", {})
@@ -631,6 +783,7 @@ class LiteratureSearcher:
                 "author",
                 [],
             ):
+
                 given = author.get(
                     "given",
                     "",
@@ -830,6 +983,7 @@ class LiteratureSearcher:
                 "author",
                 [],
             ):
+
                 full_name = (
                     author.get("fullName")
                     or author.get("authorName")
@@ -847,12 +1001,14 @@ class LiteratureSearcher:
             url = None
 
             if item.get("pmcid"):
+
                 url = (
                     "https://europepmc.org/articles/"
                     f"{item['pmcid']}"
                 )
 
             elif item.get("pmid"):
+
                 url = (
                     "https://europepmc.org/article/"
                     f"MED/{item['pmid']}"
@@ -963,6 +1119,7 @@ class LiteratureSearcher:
                 "atom:author",
                 namespace,
             ):
+
                 name = author.findtext(
                     "atom:name",
                     default="",
@@ -980,6 +1137,7 @@ class LiteratureSearcher:
                 "atom:link",
                 namespace,
             ):
+
                 href = link.attrib.get(
                     "href"
                 )
@@ -1000,6 +1158,7 @@ class LiteratureSearcher:
                 identifier
                 and "doi.org" in identifier
             ):
+
                 doi = (
                     identifier
                     .split(
@@ -1095,6 +1254,7 @@ class LiteratureSearcher:
         for word, positions in (
             inverted_index.items()
         ):
+
             for position in positions:
                 words.append(
                     (position, word)
@@ -1172,6 +1332,7 @@ class SafeLiteratureSearcher(
             )
 
         if not collected:
+
             return LiteratureSearchResult(
                 papers=[],
                 source=source,
@@ -1238,6 +1399,7 @@ class SafeLiteratureSearcher(
             for future in as_completed(
                 futures
             ):
+
                 results.append(
                     future.result()
                 )
