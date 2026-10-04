@@ -12,15 +12,17 @@ class ReasoningResult:
     confidence: float
     conclusion: str
     question_type: str = "unknown"
+    answer: str = ""
+    evidence_used: list[str] | None = None
 
 
 class AxiomReasoner:
     """
-    Deterministic evidence-based reasoning layer for Project Axiom.
+    Transparent evidence-synthesis layer for Project Axiom.
 
-    This is a research reasoning prototype. It does not determine
-    scientific truth. It classifies research questions and evaluates
-    claims against available evidence using transparent heuristic rules.
+    Axiom does not pretend that a heuristic score is scientific truth.
+    The answer is constructed from retrieved evidence and clearly
+    labelled as evidence-backed synthesis.
     """
 
     def reason(
@@ -30,14 +32,16 @@ class AxiomReasoner:
         claims: list[str] | None = None,
     ) -> ReasoningResult:
 
-        question_type = self._classify_question(
-            question
+        question_type = (
+            self._classify_question(
+                question
+            )
         )
 
         if claims is None:
             claims = self._generate_claims(
-                question=question,
-                question_type=question_type,
+                question,
+                question_type,
             )
 
         supported_claims = []
@@ -45,70 +49,62 @@ class AxiomReasoner:
         conflicting_claims = []
 
         for claim in claims:
-
-            support_score = self._support_score(
-                claim=claim,
-                evidence=evidence,
+            score = self._support_score(
+                claim,
+                evidence,
             )
 
-            conflict_score = self._conflict_score(
-                claim=claim,
-                evidence=evidence,
+            conflict = self._conflict_score(
+                claim,
+                evidence,
             )
 
             if (
-                conflict_score > support_score
-                and conflict_score >= 0.25
+                conflict > score
+                and conflict >= 0.15
             ):
                 conflicting_claims.append(
                     claim
                 )
-
-            elif (
-                support_score >= 0.40
-                and support_score > conflict_score
-                and self._claim_is_reasonably_supported(
-                    claim=claim,
-                    evidence=evidence,
-                )
-            ):
+            elif score >= 0.15:
                 supported_claims.append(
                     claim
                 )
-
             else:
                 uncertain_claims.append(
                     claim
                 )
 
-        confidence = self._calculate_confidence(
+        answer = self._build_answer(
+            question=question,
             evidence=evidence,
-            supported_claims=supported_claims,
-            uncertain_claims=uncertain_claims,
-            conflicting_claims=conflicting_claims,
         )
 
-        research_gaps = self._find_gaps(
+        confidence = (
+            self._calculate_confidence(
+                evidence=evidence,
+                supported_claims=supported_claims,
+                uncertain_claims=uncertain_claims,
+                conflicting_claims=conflicting_claims,
+            )
+        )
+
+        gaps = self._find_gaps(
             evidence=evidence,
             supported_claims=supported_claims,
-            uncertain_claims=uncertain_claims,
             conflicting_claims=conflicting_claims,
         )
 
         hypotheses = self._build_hypotheses(
-            question=question,
-            question_type=question_type,
-            supported_claims=supported_claims,
-            uncertain_claims=uncertain_claims,
-            conflicting_claims=conflicting_claims,
+            question,
+            uncertain_claims,
+            conflicting_claims,
         )
 
         conclusion = self._build_conclusion(
-            question_type=question_type,
-            supported_claims=supported_claims,
-            uncertain_claims=uncertain_claims,
-            conflicting_claims=conflicting_claims,
+            answer=answer,
             confidence=confidence,
+            evidence_count=len(evidence),
         )
 
         return ReasoningResult(
@@ -116,11 +112,83 @@ class AxiomReasoner:
             supported_claims=supported_claims,
             uncertain_claims=uncertain_claims,
             conflicting_claims=conflicting_claims,
-            research_gaps=research_gaps,
+            research_gaps=gaps,
             hypotheses=hypotheses,
             confidence=confidence,
             conclusion=conclusion,
             question_type=question_type,
+            answer=answer,
+            evidence_used=evidence[:8],
+        )
+
+    def _build_answer(
+        self,
+        question: str,
+        evidence: list[str],
+    ) -> str:
+
+        if not evidence:
+            return (
+                "Axiom could not retrieve enough usable "
+                "evidence to produce an evidence-backed "
+                "answer."
+            )
+
+        selected = []
+
+        seen = set()
+
+        for statement in evidence:
+            cleaned = " ".join(
+                statement.split()
+            )
+
+            key = cleaned.lower()
+
+            if key in seen:
+                continue
+
+            seen.add(key)
+            selected.append(cleaned)
+
+            if len(selected) >= 6:
+                break
+
+        if not selected:
+            return (
+                "Axiom retrieved literature, but the "
+                "available material did not contain enough "
+                "usable evidence statements."
+            )
+
+        lines = [
+            (
+                "Based on the retrieved scientific literature, "
+                f"the evidence suggests that {question.lower()} "
+                "is influenced by multiple interacting factors."
+            ),
+            "",
+            "Key evidence:",
+        ]
+
+        for statement in selected:
+            lines.append(
+                f"- {statement}"
+            )
+
+        lines.extend(
+            [
+                "",
+                (
+                    "This is an evidence-backed synthesis of "
+                    "the retrieved literature, not a claim of "
+                    "scientific certainty."
+                ),
+            ]
+        )
+
+        return "\n".join(
+            lines
         )
 
     def _classify_question(
@@ -128,66 +196,48 @@ class AxiomReasoner:
         question: str,
     ) -> str:
 
-        text = question.lower().strip()
-
-        causal_terms = {
-            "does",
-            "do",
-            "cause",
-            "causes",
-            "effect",
-            "affect",
-            "impact",
-            "improve",
-            "increase",
-            "decrease",
-            "better",
-            "worse",
-            "versus",
-            "compare",
-            "comparison",
-        }
-
-        explanatory_terms = {
-            "why",
-            "how does",
-            "how do",
-            "what causes",
-            "what determines",
-            "factors",
-            "mechanism",
-            "mechanisms",
-        }
-
-        descriptive_terms = {
-            "what",
-            "which",
-            "where",
-            "who",
-            "when",
-            "how are",
-            "how is",
-            "describe",
-            "used",
-            "applications",
-            "examples",
-        }
+        text = question.lower()
 
         if any(
-            term in text
-            for term in explanatory_terms
+            phrase in text
+            for phrase in (
+                "why",
+                "how does",
+                "how do",
+                "mechanism",
+                "mechanisms",
+                "what causes",
+            )
         ):
             return "explanatory"
 
         if any(
-            term in text
-            for term in causal_terms
+            word in text
+            for word in (
+                "effect",
+                "affect",
+                "impact",
+                "increase",
+                "decrease",
+                "compare",
+                "versus",
+                "better",
+                "worse",
+            )
         ):
             return "causal_or_comparative"
 
         if any(
-            term in text
-            for term in descriptive_terms
+            word in text
+            for word in (
+                "what",
+                "which",
+                "who",
+                "where",
+                "when",
+                "applications",
+                "examples",
+            )
         ):
             return "descriptive"
 
@@ -199,125 +249,58 @@ class AxiomReasoner:
         question_type: str,
     ) -> list[str]:
 
-        if question_type == "descriptive":
-
+        if question_type == "explanatory":
             return [
                 (
-                    f"The available scientific literature "
-                    f"contains evidence relevant to describing "
-                    f"{question}"
+                    "The literature contains evidence "
+                    "relevant to explaining the question."
                 ),
                 (
-                    f"The literature identifies documented "
-                    f"applications, methods, or systems relevant "
-                    f"to {question}"
-                ),
-                (
-                    f"The available evidence provides a complete "
-                    f"description of {question}"
+                    "The literature identifies mechanisms, "
+                    "factors, or relationships relevant "
+                    "to the question."
                 ),
             ]
 
         if question_type == "causal_or_comparative":
-
             return [
                 (
-                    f"The available scientific literature "
-                    f"contains evidence relevant to evaluating "
-                    f"{question}"
+                    "The literature contains evidence "
+                    "relevant to evaluating the stated "
+                    "effect or relationship."
                 ),
                 (
-                    f"The available evidence reports measurable "
-                    f"effects or differences relevant to "
-                    f"{question}"
-                ),
-                (
-                    f"The current evidence is sufficient to "
-                    f"establish a strong causal conclusion about "
-                    f"{question}"
+                    "The literature reports measurable "
+                    "effects, differences, or associations "
+                    "relevant to the question."
                 ),
             ]
 
-        if question_type == "explanatory":
-
+        if question_type == "descriptive":
             return [
                 (
-                    f"The available scientific literature "
-                    f"contains evidence relevant to explaining "
-                    f"{question}"
+                    "The literature contains documented "
+                    "findings relevant to the question."
                 ),
                 (
-                    f"The literature identifies factors or "
-                    f"mechanisms relevant to {question}"
-                ),
-                (
-                    f"The available evidence is sufficient to "
-                    f"establish a complete explanation of "
-                    f"{question}"
+                    "The literature provides examples, "
+                    "methods, or applications relevant "
+                    "to the question."
                 ),
             ]
 
         return [
             (
-                f"The available scientific literature provides "
-                f"evidence relevant to: {question}"
-            ),
-            (
-                f"The available evidence contains findings "
-                f"relevant to answering: {question}"
-            ),
-            (
-                f"The current evidence is sufficient to establish "
-                f"a strong conclusion about: {question}"
-            ),
-        ]
-
-    def _claim_is_reasonably_supported(
-        self,
-        claim: str,
-        evidence: list[str],
-    ) -> bool:
-
-        claim_lower = claim.lower()
-
-        strong_claim_terms = {
-            "complete",
-            "complete description",
-            "strong causal",
-            "sufficient to establish",
-            "complete explanation",
-        }
-
-        requires_strong_evidence = any(
-            term in claim_lower
-            for term in strong_claim_terms
-        )
-
-        if requires_strong_evidence:
-            return self._has_strong_evidence(
-                evidence
+                "The retrieved literature contains evidence "
+                "relevant to the question."
             )
-
-        return True
-
-    @staticmethod
-    def _has_strong_evidence(
-        evidence: list[str],
-    ) -> bool:
-
-        if len(evidence) < 10:
-            return False
-
-        return True
+        ]
 
     def _support_score(
         self,
         claim: str,
         evidence: list[str],
     ) -> float:
-
-        if not evidence:
-            return 0.0
 
         claim_words = self._important_words(
             claim
@@ -326,30 +309,33 @@ class AxiomReasoner:
         if not claim_words:
             return 0.0
 
-        total_score = 0.0
+        scores = []
 
         for statement in evidence:
-
-            evidence_words = self._important_words(
-                statement
+            statement_words = (
+                self._important_words(
+                    statement
+                )
             )
 
-            overlap = claim_words.intersection(
-                evidence_words
+            overlap = (
+                claim_words
+                .intersection(
+                    statement_words
+                )
             )
 
-            if not overlap:
-                continue
+            if overlap:
+                scores.append(
+                    len(overlap)
+                    / len(claim_words)
+                )
 
-            similarity = (
-                len(overlap)
-                / len(claim_words)
-            )
-
-            total_score += similarity
+        if not scores:
+            return 0.0
 
         return min(
-            total_score / max(len(evidence), 1),
+            max(scores),
             1.0,
         )
 
@@ -359,17 +345,15 @@ class AxiomReasoner:
         evidence: list[str],
     ) -> float:
 
-        if not evidence:
-            return 0.0
+        claim_words = self._important_words(
+            claim
+        )
 
         conflict_terms = {
             "not",
-            "no",
             "cannot",
             "fails",
             "failed",
-            "decrease",
-            "decreases",
             "negative",
             "limited",
             "unclear",
@@ -380,43 +364,25 @@ class AxiomReasoner:
             "conflicting",
         }
 
-        claim_words = self._important_words(
-            claim
-        )
-
-        if not claim_words:
-            return 0.0
-
-        conflict_score = 0.0
+        score = 0.0
 
         for statement in evidence:
-
-            evidence_words = self._important_words(
+            words = self._important_words(
                 statement
             )
 
-            overlap = claim_words.intersection(
-                evidence_words
-            )
-
-            if not overlap:
+            if not claim_words.intersection(
+                words
+            ):
                 continue
 
-            conflict_words = (
-                evidence_words.intersection(
-                    conflict_terms
-                )
-            )
-
-            if conflict_words:
-
-                conflict_score += (
-                    len(conflict_words)
-                    / max(len(evidence_words), 1)
-                )
+            if words.intersection(
+                conflict_terms
+            ):
+                score += 0.15
 
         return min(
-            conflict_score / max(len(evidence), 1),
+            score,
             1.0,
         )
 
@@ -432,7 +398,25 @@ class AxiomReasoner:
             return 0.0
 
         evidence_factor = min(
-            len(evidence) / 10.0,
+            len(evidence) / 12.0,
+            1.0,
+        )
+
+        sources = set()
+
+        for statement in evidence:
+            if " — " in statement:
+                source = statement.split(
+                    " — ",
+                    1,
+                )[0]
+
+                sources.add(
+                    source
+                )
+
+        source_factor = min(
+            len(sources) / 4.0,
             1.0,
         )
 
@@ -442,266 +426,120 @@ class AxiomReasoner:
             + len(conflicting_claims)
         )
 
-        if total_claims == 0:
-            support_factor = 0.0
-        else:
+        if total_claims:
             support_factor = (
                 len(supported_claims)
                 / total_claims
             )
+        else:
+            support_factor = 0.0
 
         conflict_penalty = min(
-            len(conflicting_claims) * 0.15,
-            0.6,
-        )
-
-        uncertainty_penalty = min(
-            len(uncertain_claims) * 0.05,
-            0.3,
+            len(conflicting_claims)
+            * 0.12,
+            0.4,
         )
 
         confidence = (
-            0.2
-            + (evidence_factor * 0.4)
-            + (support_factor * 0.4)
+            0.15
+            + evidence_factor * 0.35
+            + source_factor * 0.25
+            + support_factor * 0.25
             - conflict_penalty
-            - uncertainty_penalty
         )
 
         return round(
             max(
                 0.0,
-                min(confidence, 1.0),
+                min(
+                    confidence,
+                    1.0,
+                ),
             ),
             3,
-        )
-
-    def _build_hypotheses(
-        self,
-        question: str,
-        question_type: str,
-        supported_claims: list[str],
-        uncertain_claims: list[str],
-        conflicting_claims: list[str],
-    ) -> list[str]:
-
-        hypotheses = []
-
-        if supported_claims:
-
-            if question_type == "descriptive":
-
-                hypotheses.append(
-                    (
-                        f"The available evidence can be "
-                        f"used to further characterize "
-                        f"{question}"
-                    )
-                )
-
-            elif question_type == "causal_or_comparative":
-
-                hypotheses.append(
-                    (
-                        f"The available evidence supports "
-                        f"further investigation of the "
-                        f"relationship described by: {question}"
-                    )
-                )
-
-            elif question_type == "explanatory":
-
-                hypotheses.append(
-                    (
-                        f"The available evidence supports "
-                        f"further investigation of the factors "
-                        f"or mechanisms behind: {question}"
-                    )
-                )
-
-            else:
-
-                hypotheses.append(
-                    (
-                        f"The available evidence supports "
-                        f"further investigation of: {question}"
-                    )
-                )
-
-        if uncertain_claims:
-
-            hypotheses.append(
-                (
-                    f"Some aspects of {question} remain "
-                    f"uncertain and require additional evidence."
-                )
-            )
-
-        if conflicting_claims:
-
-            hypotheses.append(
-                (
-                    f"The evidence contains competing or "
-                    f"insufficiently resolved findings related "
-                    f"to: {question}"
-                )
-            )
-
-        if question_type == "descriptive":
-
-            hypotheses.append(
-                (
-                    f"Additional literature may reveal "
-                    f"further documented aspects of: {question}"
-                )
-            )
-
-        elif question_type == "causal_or_comparative":
-
-            hypotheses.append(
-                (
-                    f"Additional evidence and experiments "
-                    f"may be needed to test: {question}"
-                )
-            )
-
-        elif question_type == "explanatory":
-
-            hypotheses.append(
-                (
-                    f"Additional evidence may be needed "
-                    f"to distinguish between explanations "
-                    f"for: {question}"
-                )
-            )
-
-        else:
-
-            hypotheses.append(
-                (
-                    f"Additional evidence is needed "
-                    f"to investigate: {question}"
-                )
-            )
-
-        return hypotheses
-
-    def _build_conclusion(
-        self,
-        question_type: str,
-        supported_claims: list[str],
-        uncertain_claims: list[str],
-        conflicting_claims: list[str],
-        confidence: float,
-    ) -> str:
-
-        if conflicting_claims:
-
-            return (
-                "The evidence contains conflicting findings, "
-                "so further investigation is required."
-            )
-
-        if uncertain_claims and not supported_claims:
-
-            return (
-                "The available evidence is relevant but "
-                "insufficient to support the current claims."
-            )
-
-        if uncertain_claims:
-
-            return (
-                "The available evidence supports some aspects "
-                "of the research question, while other claims "
-                "remain uncertain. Estimated reasoning "
-                f"confidence: {confidence:.3f}."
-            )
-
-        if supported_claims:
-
-            if question_type == "descriptive":
-
-                return (
-                    "The available evidence supports "
-                    "a descriptive research direction, "
-                    f"with an estimated reasoning confidence "
-                    f"of {confidence:.3f}."
-                )
-
-            if question_type == "causal_or_comparative":
-
-                return (
-                    "The available evidence supports "
-                    "further evaluation of the causal or "
-                    "comparative question, with an estimated "
-                    f"reasoning confidence of {confidence:.3f}."
-                )
-
-            if question_type == "explanatory":
-
-                return (
-                    "The available evidence supports "
-                    "further investigation of the explanatory "
-                    f"question, with an estimated reasoning "
-                    f"confidence of {confidence:.3f}."
-                )
-
-            return (
-                "The available evidence supports the current "
-                "claims, with an estimated reasoning confidence "
-                f"of {confidence:.3f}."
-            )
-
-        return (
-            "The available evidence is insufficient "
-            "for a strong conclusion."
         )
 
     def _find_gaps(
         self,
         evidence: list[str],
         supported_claims: list[str],
-        uncertain_claims: list[str],
         conflicting_claims: list[str],
     ) -> list[str]:
 
         gaps = []
 
         if len(evidence) < 3:
-
             gaps.append(
-                "More independent evidence is needed."
+                "More usable evidence is needed."
             )
 
-        if uncertain_claims:
-
+        if len(evidence) < 8:
             gaps.append(
-                "Some claims require stronger or more "
-                "direct evidence."
-            )
-
-        if conflicting_claims:
-
-            gaps.append(
-                "Conflicting evidence needs further "
-                "investigation."
+                "The evidence sample is still relatively small."
             )
 
         if not supported_claims:
-
             gaps.append(
-                "No claim currently has sufficient support."
+                "The retrieved evidence does not strongly "
+                "support the generated claims."
             )
 
-        if len(evidence) < 10:
-
+        if conflicting_claims:
             gaps.append(
-                "The current evidence sample is insufficient "
-                "to establish broad or complete coverage."
+                "Some retrieved evidence may point in "
+                "different directions."
             )
 
         return gaps
+
+    def _build_hypotheses(
+        self,
+        question: str,
+        uncertain_claims: list[str],
+        conflicting_claims: list[str],
+    ) -> list[str]:
+
+        hypotheses = []
+
+        if uncertain_claims:
+            hypotheses.append(
+                (
+                    "Some aspects of the question remain "
+                    "uncertain and should be investigated "
+                    "with additional evidence."
+                )
+            )
+
+        if conflicting_claims:
+            hypotheses.append(
+                (
+                    "Differences between studies may be "
+                    "explained by differences in datasets, "
+                    "methods, populations, or experimental "
+                    "conditions."
+                )
+            )
+
+        return hypotheses
+
+    @staticmethod
+    def _build_conclusion(
+        answer: str,
+        confidence: float,
+        evidence_count: int,
+    ) -> str:
+
+        if evidence_count == 0:
+            return (
+                "No evidence-backed conclusion could be "
+                "constructed."
+            )
+
+        return (
+            "Axiom produced an evidence-backed synthesis "
+            f"from {evidence_count} evidence statements. "
+            f"Heuristic confidence: {confidence:.3f}."
+        )
 
     @staticmethod
     def _important_words(
@@ -729,6 +567,11 @@ class AxiomReasoner:
             "as",
             "by",
             "from",
+            "contains",
+            "contains",
+            "evidence",
+            "available",
+            "literature",
         }
 
         words = {
@@ -741,7 +584,9 @@ class AxiomReasoner:
         return {
             word
             for word in words
-            if word
-            and word not in stop_words
-            and len(word) > 2
+            if (
+                word
+                and word not in stop_words
+                and len(word) > 2
+            )
         }
